@@ -26,7 +26,12 @@ from mappo.models.critic import APPOCritic, ETPOCritic, TPPOCritic
 class LlamaLoRAgent:
 
     def __init__(self, model_name, max_new_tokens, algo, load_path=None):
-        self.device = "cuda"
+        if torch.cuda.is_available():
+            self.device = "cuda"
+        elif torch.backends.mps.is_available():
+            self.device = "mps"
+        else:
+            self.device = "cpu"
         self.algo = algo
         self.tokenizer = LlamaTokenizer.from_pretrained(model_name)
         self.tokenizer.pad_token_id = (
@@ -88,7 +93,7 @@ class LlamaLoRAgent:
         else:
             raise NotImplementedError
         if critic_weights is not None:
-            critic.v_head.load_state_dict(torch.load(critic_weights, map_location= "cpu"))
+            critic.v_head.load_state_dict(torch.load(critic_weights, map_location=self.device))
         return critic
     
     def sample_actions(self, input_ids, token_logits, seq_token_lengths, act_token_lengths, 
@@ -107,8 +112,11 @@ class LlamaLoRAgent:
             logit_slice = pi_log_softmax[i, start_idx:end_idx, :]
             token_slice = input_ids[i, start_idx:end_idx]
             action_token_list.append(token_slice)
-            
-            act_logit_seq = torch.gather(logit_slice, 1, token_slice[:, None]).squeeze(-1)
+
+            if self.device == "mps":
+                act_logit_seq = logit_slice[torch.arange(logit_slice.size(0), device=logit_slice.device), token_slice]
+            else:
+                act_logit_seq = torch.gather(logit_slice, 1, token_slice[:, None]).squeeze(-1)
             # action_log_softmax = act_logit_seq.sum() / act_token_lengths[i]  # token normalization
             action_word_length = len(flatten_action_list[i].split())
             action_log_softmax = act_logit_seq.sum() / action_word_length  # word normalization
@@ -117,7 +125,7 @@ class LlamaLoRAgent:
         
         actions = []
         action_tokens = torch.ones((len(action_num_list), self.max_new_tokens), 
-                                   dtype=torch.int64).to("cuda") * self.tokenizer.pad_token_id
+                                   dtype=torch.int64).to(self.device) * self.tokenizer.pad_token_id
         action_log_probs = []
         entropies = []
         for i in range(len(action_num_list)):
@@ -159,7 +167,7 @@ class LlamaLoRAgent:
             action_ids = []
             for i in range(len(actions)):
                 action_ids.append(action_list[i].index(actions[i]))
-            action_ids = torch.tensor(action_ids).to("cuda")
+            action_ids = torch.tensor(action_ids).to(self.device)
         else:
             action_ids = None
         
@@ -170,8 +178,8 @@ class LlamaLoRAgent:
             action_sequences += [a for a in ac]  # for llama
         
         token_seq = self.tokenizer(sequences, return_tensors="pt", padding=True)
-        input_ids = token_seq["input_ids"].to("cuda")
-        attn_mask = token_seq["attention_mask"].to("cuda")
+        input_ids = token_seq["input_ids"].to(self.device)
+        attn_mask = token_seq["attention_mask"].to(self.device)
         seq_token_lengths = attn_mask.sum(dim=1)
         
         outputs = self.actor(input_ids=input_ids, attention_mask=attn_mask, return_dict=True)
@@ -179,7 +187,7 @@ class LlamaLoRAgent:
         input_ids = input_ids[: , 1:]  # align logits and ids
         
         act_token_seq = self.tokenizer(action_sequences, return_tensors="pt", padding=True)
-        act_attn_mask = act_token_seq["attention_mask"].to("cuda")
+        act_attn_mask = act_token_seq["attention_mask"].to(self.device)
         act_token_lengths = act_attn_mask.sum(dim=1) - 1  # ignore the <bos> token
             
         actions, action_tokens, action_log_probs, entropies = self.sample_actions(input_ids, 
@@ -206,7 +214,7 @@ class LlamaLoRAgent:
         return values
     
     def get_slice(self, logits, seq_token_lengths, act_token_lengths):
-        action_slice = torch.zeros((logits.shape[0], self.max_new_tokens, logits.shape[-1])).to("cuda")
+        action_slice = torch.zeros((logits.shape[0], self.max_new_tokens, logits.shape[-1])).to(self.device)
         for i in range(logits.shape[0]):
             start_idx = seq_token_lengths[i] - act_token_lengths[i] - 1
             end_idx = seq_token_lengths[i] - 1
@@ -217,12 +225,12 @@ class LlamaLoRAgent:
         obs_act = [obs[i] + " " + actions[i] for i in range(len(obs))]
         
         token_seq = self.tokenizer(obs_act, return_tensors="pt", padding=True)
-        input_ids = token_seq["input_ids"].to("cuda")
-        attn_mask = token_seq["attention_mask"].to("cuda")
+        input_ids = token_seq["input_ids"].to(self.device)
+        attn_mask = token_seq["attention_mask"].to(self.device)
         seq_token_lengths = attn_mask.sum(dim=1)
         
         act_token_seq = self.tokenizer(actions.tolist(), return_tensors="pt", padding=True)
-        act_attn_mask = act_token_seq["attention_mask"].to("cuda")
+        act_attn_mask = act_token_seq["attention_mask"].to(self.device)
         act_token_lengths = act_attn_mask.sum(dim=1) - 1  # ignore the <bos> token
         
         with self.actor.disable_adapter():
@@ -234,12 +242,12 @@ class LlamaLoRAgent:
         obs_act = [obs[i] + " " + actions[i] for i in range(len(obs))]
         
         token_seq = self.tokenizer(obs_act, return_tensors="pt", padding=True)
-        input_ids = token_seq["input_ids"].to("cuda")
-        attn_mask = token_seq["attention_mask"].to("cuda")
+        input_ids = token_seq["input_ids"].to(self.device)
+        attn_mask = token_seq["attention_mask"].to(self.device)
         seq_token_lengths = attn_mask.sum(dim=1)
         
         act_token_seq = self.tokenizer(actions.tolist(), return_tensors="pt", padding=True)
-        act_attn_mask = act_token_seq["attention_mask"].to("cuda")
+        act_attn_mask = act_token_seq["attention_mask"].to(self.device)
         act_token_lengths = act_attn_mask.sum(dim=1) - 1  # ignore the <bos> token
         
         with self.actor.disable_adapter():
@@ -292,8 +300,8 @@ class LlamaLoRAgent:
     def get_next_etpo_values(self, obs):
         
         token_seq = self.tokenizer(obs.tolist(), return_tensors="pt", padding=True)
-        input_ids = token_seq["input_ids"].to("cuda")
-        attn_mask = token_seq["attention_mask"].to("cuda")
+        input_ids = token_seq["input_ids"].to(self.device)
+        attn_mask = token_seq["attention_mask"].to(self.device)
         token_idx = attn_mask.sum(dim=1) - 1
         
         # values
@@ -316,8 +324,8 @@ class LlamaLoRAgent:
     
     def get_next_tppo_values(self, obs): 
         token_seq = self.tokenizer(obs.tolist(), return_tensors="pt", padding=True)
-        input_ids = token_seq["input_ids"].to("cuda")
-        attn_mask = token_seq["attention_mask"].to("cuda")
+        input_ids = token_seq["input_ids"].to(self.device)
+        attn_mask = token_seq["attention_mask"].to(self.device)
         token_idx = attn_mask.sum(dim=1) - 1
         
         # values
@@ -364,5 +372,3 @@ class LlamaLoRAgent:
     def load(self, save_dir):
         print("load model on path: ", save_dir)
         self.actor = self._init_actor(save_dir).to(self.device)
-
-

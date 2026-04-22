@@ -26,7 +26,12 @@ from copy import deepcopy
 class LlamaFullAgent:
 
     def __init__(self, model_name, max_new_tokens, algo, load_path=None):
-        self.device = "cuda"
+        if torch.cuda.is_available():
+            self.device = "cuda"
+        elif torch.backends.mps.is_available():
+            self.device = "mps"
+        else:
+            self.device = "cpu"
         self.algo = algo
         self.tokenizer = LlamaTokenizer.from_pretrained(model_name)
         self.tokenizer.pad_token_id = (
@@ -34,10 +39,12 @@ class LlamaFullAgent:
         )
         if load_path is not None:
             model_name = load_path
-        self.base_model = LlamaForCausalLM.from_pretrained(model_name, 
-                                                        torch_dtype=torch.float16,
-                                                        device_map="auto")
-        self.base_model.half().to(self.device)
+        model_dtype = torch.float16 if self.device == "cuda" else torch.float32
+        self.base_model = LlamaForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=model_dtype,
+        )
+        self.base_model.to(self.device)
         
         self.max_new_tokens = max_new_tokens
         
@@ -81,7 +88,7 @@ class LlamaFullAgent:
         
         actions = []
         action_tokens = torch.ones((len(action_num_list), self.max_new_tokens), 
-                                   dtype=torch.int64).to("cuda") * self.tokenizer.pad_token_id
+                                   dtype=torch.int64).to(self.device) * self.tokenizer.pad_token_id
         action_log_probs = []
         entropies = []
         for i in range(len(action_num_list)):
@@ -123,7 +130,7 @@ class LlamaFullAgent:
             action_ids = []
             for i in range(len(actions)):
                 action_ids.append(action_list[i].index(actions[i]))
-            action_ids = torch.tensor(action_ids).to("cuda")
+            action_ids = torch.tensor(action_ids).to(self.device)
         else:
             action_ids = None
         
@@ -134,8 +141,8 @@ class LlamaFullAgent:
             action_sequences += [a for a in ac]  # for llama
         
         token_seq = self.tokenizer(sequences, return_tensors="pt", padding=True)
-        input_ids = token_seq["input_ids"].to("cuda")
-        attn_mask = token_seq["attention_mask"].to("cuda")
+        input_ids = token_seq["input_ids"].to(self.device)
+        attn_mask = token_seq["attention_mask"].to(self.device)
         seq_token_lengths = attn_mask.sum(dim=1)
         
         outputs = self.actor(input_ids=input_ids, attention_mask=attn_mask, return_dict=True)
@@ -143,7 +150,7 @@ class LlamaFullAgent:
         input_ids = input_ids[: , 1:]  # align logits and ids
         
         act_token_seq = self.tokenizer(action_sequences, return_tensors="pt", padding=True)
-        act_attn_mask = act_token_seq["attention_mask"].to("cuda")
+        act_attn_mask = act_token_seq["attention_mask"].to(self.device)
         act_token_lengths = act_attn_mask.sum(dim=1) - 1  # ignore the <bos> token
             
         actions, action_tokens, action_log_probs, entropies = self.sample_actions(input_ids, 
@@ -169,7 +176,7 @@ class LlamaFullAgent:
         return values
     
     def get_slice(self, logits, seq_token_lengths, act_token_lengths):
-        action_slice = torch.zeros((logits.shape[0], self.max_new_tokens, logits.shape[-1])).to("cuda")
+        action_slice = torch.zeros((logits.shape[0], self.max_new_tokens, logits.shape[-1])).to(self.device)
         for i in range(logits.shape[0]):
             start_idx = seq_token_lengths[i] - act_token_lengths[i] - 1
             end_idx = seq_token_lengths[i] - 1
@@ -180,12 +187,12 @@ class LlamaFullAgent:
         obs_act = [obs[i] + " " + actions[i] for i in range(len(obs))]
         
         token_seq = self.tokenizer(obs_act, return_tensors="pt", padding=True)
-        input_ids = token_seq["input_ids"].to("cuda")
-        attn_mask = token_seq["attention_mask"].to("cuda")
+        input_ids = token_seq["input_ids"].to(self.device)
+        attn_mask = token_seq["attention_mask"].to(self.device)
         seq_token_lengths = attn_mask.sum(dim=1)
         
         act_token_seq = self.tokenizer(actions.tolist(), return_tensors="pt", padding=True)
-        act_attn_mask = act_token_seq["attention_mask"].to("cuda")
+        act_attn_mask = act_token_seq["attention_mask"].to(self.device)
         act_token_lengths = act_attn_mask.sum(dim=1) - 1  # ignore the <bos> token
         
         values = self.critic(input_ids, attention_mask=attn_mask)
@@ -196,12 +203,12 @@ class LlamaFullAgent:
         obs_act = [obs[i] + " " + actions[i] for i in range(len(obs))]
         
         token_seq = self.tokenizer(obs_act, return_tensors="pt", padding=True)
-        input_ids = token_seq["input_ids"].to("cuda")
-        attn_mask = token_seq["attention_mask"].to("cuda")
+        input_ids = token_seq["input_ids"].to(self.device)
+        attn_mask = token_seq["attention_mask"].to(self.device)
         seq_token_lengths = attn_mask.sum(dim=1)
         
         act_token_seq = self.tokenizer(actions.tolist(), return_tensors="pt", padding=True)
-        act_attn_mask = act_token_seq["attention_mask"].to("cuda")
+        act_attn_mask = act_token_seq["attention_mask"].to(self.device)
         act_token_lengths = act_attn_mask.sum(dim=1) - 1  # ignore the <bos> token
             
         pi_outputs = self.actor(input_ids=input_ids, attention_mask=attn_mask, return_dict=True)
@@ -235,8 +242,8 @@ class LlamaFullAgent:
     
     def get_next_tppo_values(self, obs): 
         token_seq = self.tokenizer(obs.tolist(), return_tensors="pt", padding=True)
-        input_ids = token_seq["input_ids"].to("cuda")
-        attn_mask = token_seq["attention_mask"].to("cuda")
+        input_ids = token_seq["input_ids"].to(self.device)
+        attn_mask = token_seq["attention_mask"].to(self.device)
         token_idx = attn_mask.sum(dim=1) - 1
         
         # values
@@ -276,5 +283,3 @@ class LlamaFullAgent:
         os.makedirs(exp_path, exist_ok=True)
         # save full scale model
         self.actor.save_pretrained(exp_path)
-
-

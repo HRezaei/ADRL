@@ -10,7 +10,14 @@ from mappo.agents.llama_lora_agent import LlamaLoRAgent
 class TPPOTrainer:
 
     def __init__(self, args, agent, num_agents):
-        self.tpdv = dict(dtype=torch.float32, device=torch.device("cuda:0"))
+        if torch.cuda.is_available():
+            self.device = "cuda"
+        elif torch.backends.mps.is_available():
+            self.device = "mps"
+        else:
+            self.device = "cpu"
+
+        self.tpdv = dict(dtype=torch.float32, device=torch.device(f"{self.device}:0"))
         self.agent = agent
 
         self.clip_param = args.clip_param
@@ -84,11 +91,11 @@ class TPPOTrainer:
         std_advantages = np.nanstd(advantages_copy)
         advantages_batch = (advantages_batch - mean_advantages) / (std_advantages + 1e-8)
 
-        log_prob_batch = torch.from_numpy(log_prob_batch).to("cuda")
-        value_preds_batch = torch.from_numpy(value_preds_batch).to("cuda")
-        return_batch = torch.from_numpy(return_batch).to("cuda")
-        advantages_batch = torch.from_numpy(advantages_batch).to("cuda")
-        action_tokens_batch = torch.from_numpy(action_tokens_batch).to("cuda")
+        log_prob_batch = torch.from_numpy(log_prob_batch).to(self.device)
+        value_preds_batch = torch.from_numpy(value_preds_batch).to(self.device)
+        return_batch = torch.from_numpy(return_batch).to(self.device)
+        advantages_batch = torch.from_numpy(advantages_batch).to(self.device)
+        action_tokens_batch = torch.from_numpy(action_tokens_batch).to(self.device)
         token_mask = self.cal_token_mask(action_tokens_batch)
         batch_size = obs_batch.shape[0]
         
