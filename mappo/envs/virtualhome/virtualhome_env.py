@@ -33,14 +33,22 @@ class VirtualHomeEnv:
         }
         
     def reset(self):
-        ori_obs = self.envs.reset()
+        outcome = self.envs.reset()
+        if isinstance(outcome, tuple):
+            ori_obs, empty_infos = outcome
+        else:
+            ori_obs = outcome
         obs, ava = self.handle_obs(ori_obs)
 
         return obs, ava
         
     def step(self, ori_action):
         action = self.handle_action(ori_action)
-        ori_next_obs, reward, done, info = self.envs.step(action)
+        outcome = self.envs.step(action)
+        if len(outcome) == 5:
+            ori_next_obs, reward, done, truncated, info = outcome
+        else:
+            ori_next_obs, reward, done, info = outcome
         next_obs, ava = self.handle_obs(ori_next_obs)
         reward = np.repeat(reward[:, None], self.num_agents, axis=1)
         done = np.repeat(done[:, None], self.num_agents, axis=1)
