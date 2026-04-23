@@ -7,6 +7,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from mappo.scripts.train_virtualhome import build_run_dir
+
 sys.path.append("../../")
 from mappo.config import get_config
 from mappo.envs.babyai_text.babyai_text_env import BabyAITextEnv
@@ -37,31 +39,6 @@ def parse_args(args, parser):
         help="Number of past observations to use for prompt generation.",
     )
     return parser.parse_known_args(args)[0]
-
-
-def build_run_dir(all_args):
-    run_dir = (
-        Path(os.path.split(os.path.dirname(os.path.abspath(__file__)))[0] + "/scripts/results")
-        / all_args.experiment_name
-        / all_args.env_name
-        / all_args.algorithm_name
-    )
-
-    if not run_dir.exists():
-        os.makedirs(str(run_dir))
-        curr_run = "run1"
-    else:
-        exst_run_nums = [
-            int(str(folder.name).split("run")[1])
-            for folder in run_dir.iterdir()
-            if str(folder.name).startswith("run")
-        ]
-        curr_run = "run1" if len(exst_run_nums) == 0 else f"run{max(exst_run_nums) + 1}"
-
-    run_dir = run_dir / curr_run
-    if not run_dir.exists():
-        os.makedirs(str(run_dir))
-    return run_dir
 
 
 def main(args):

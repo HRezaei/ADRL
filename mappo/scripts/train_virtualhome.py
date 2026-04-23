@@ -26,8 +26,12 @@ def parse_args(args, parser):
     return all_args
 
 def build_run_dir(all_args):
-    run_dir = Path(os.path.split(os.path.dirname(os.path.abspath(__file__)))[
-                       0] + "/scripts/results") / all_args.experiment_name / all_args.env_name / all_args.algorithm_name
+    run_dir_base = getattr(all_args, "run_dir_base", None)
+    if run_dir_base is None:
+        run_dir_base = Path(os.path.split(os.path.dirname(os.path.abspath(__file__)))[0] + "/scripts/results")
+    else:
+        run_dir_base = Path(run_dir_base)
+    run_dir = run_dir_base / all_args.experiment_name / all_args.env_name / all_args.algorithm_name
     if not run_dir.exists():
         os.makedirs(str(run_dir))
         curr_run = 'run1'
