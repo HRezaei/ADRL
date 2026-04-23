@@ -1,3 +1,5 @@
+from tqdm import tqdm
+
 from mappo.runner.shared.virtualhome_runner import VirtualHomeRunner
 
 
@@ -11,8 +13,8 @@ class BabyAITextRunner(VirtualHomeRunner):
         episodes = int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
 
         total_num_steps = 0
-        for episode in range(episodes):
-            for step in range(self.episode_length):
+        for episode in tqdm(range(episodes), desc="episodes"):
+            for step in tqdm(range(self.episode_length), desc="steps"):
                 # Sample actions
                 values, actions, action_tokens, log_probs = self.collect(step)
 
@@ -49,5 +51,3 @@ class BabyAITextRunner(VirtualHomeRunner):
             if episode % self.log_interval == 0:
                 print("total_num_steps: ", total_num_steps)
                 self.log_train(train_infos, total_num_steps)
-
-
