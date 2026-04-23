@@ -3,6 +3,7 @@ import os
 import numpy as np
 from functools import reduce
 import torch
+import wandb
 from tensorboardX import SummaryWriter
 from mappo.models.codellama import Llama
 from mappo.agents.llama_lora_agent import LlamaLoRAgent
@@ -37,6 +38,17 @@ class VirtualHomeRunner:
         self.log_dir = str(self.run_dir / 'logs')
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
+
+        config_for_wandb = config.copy()
+        config_for_wandb["all_args"] = vars(config_for_wandb["all_args"])
+        del config_for_wandb["envs"]
+        del config_for_wandb["eval_envs"]
+        wandb.init(
+            project="adrl",
+            sync_tensorboard=True,
+            settings=wandb.Settings(_service_wait=300, code_dir="./mappo"),
+            config=config_for_wandb,
+        )
         self.writter = SummaryWriter(self.log_dir)
         self.save_dir = str(self.run_dir / 'models/')
         if not os.path.exists(self.save_dir):
@@ -162,5 +174,3 @@ class VirtualHomeRunner:
     def save(self, episode):
         """Save policy's actor and critic networks."""
         self.agent.save(self.save_dir, episode)
-
-
