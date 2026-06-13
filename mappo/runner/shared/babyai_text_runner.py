@@ -14,6 +14,7 @@ class BabyAITextRunner(VirtualHomeRunner):
 
         total_num_steps = 0
         for episode in tqdm(range(episodes), desc="episodes"):
+            finished_rewards = []
             for step in tqdm(range(self.episode_length), desc="steps"):
                 # Sample actions
                 values, actions, action_tokens, log_probs = self.collect(step)
@@ -23,12 +24,13 @@ class BabyAITextRunner(VirtualHomeRunner):
 
                 for i in range(self.n_rollout_threads):
                     if dones[i] or self.envs.envs.envs[i].steps_remaining == 0:
+                        finished_rewards.append(rewards[i])
                         global_step = total_num_steps + step * self.n_rollout_threads + i
                         print(
                             f"global_step={global_step}, episodic_return={rewards[i]}, episodic_length={0}")
                         self.writter.add_scalar("charts/episodic_return", rewards[i], global_step)
                         self.writter.add_scalar("charts/episodic_length", 0, global_step)
-                        break
+                        #break Original virtualhome runner has break here! I don't know why?!
 
                 # insert data into buffer
                 data = obs, rewards, dones, ava, values, \
@@ -37,12 +39,14 @@ class BabyAITextRunner(VirtualHomeRunner):
 
             total_num_steps = (episode + 1) * self.episode_length * self.n_rollout_threads
 
+            success_per_episode =  [1 if r > 0 else 0 for r in finished_rewards]
             # compute return and update network
             self.before_update()
             # self.trainer.prep_training()
             train_infos = self.trainer.train(self.buffer)
             self.buffer.after_update()
 
+            train_infos["success_rate"] = sum(success_per_episode) / len(success_per_episode)
             # save model
             if (episode == episodes - 1):
                 self.save(episode)

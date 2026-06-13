@@ -56,7 +56,9 @@ def main(args):
     torch.backends.cudnn.benchmark = False
 
     envs = BabyAITextEnv(
-        all_args.env_name, all_args.n_rollout_threads, all_args.seed, num_past_obs=all_args.num_past_obs
+        all_args.env_name, all_args.n_rollout_threads, all_args.seed, num_past_obs=all_args.num_past_obs,
+        save_gifs=all_args.save_gifs,
+        run_dir=run_dir
     )
     eval_envs = BabyAITextEnv(
         all_args.env_name, all_args.n_eval_rollout_threads, all_args.seed * 5

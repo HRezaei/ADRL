@@ -1,5 +1,7 @@
 import time
 import os
+from math import nan
+
 import numpy as np
 from functools import reduce
 import torch
@@ -94,13 +96,18 @@ class VirtualHomeRunner:
         
         total_num_steps = 0
         for episode in range(episodes):
+            finished_rewards = []
             for step in range(self.episode_length):
                 # Sample actions
                 values, actions, action_tokens, log_probs = self.collect(step)
 
                 # Obser reward and next obs
                 obs, rewards, dones, ava, infos = self.envs.step(actions)
-                
+
+                for i in range(self.n_rollout_threads):
+                    if "episode" in infos[i].keys():
+                        finished_rewards.append(infos[i]["episode"]["r"])
+
                 for i in range(self.n_rollout_threads):
                     if "episode" in infos[i].keys():
                         global_step = total_num_steps + step * self.n_rollout_threads + i
@@ -108,6 +115,7 @@ class VirtualHomeRunner:
                         self.writter.add_scalar("charts/episodic_return", infos[i]["episode"]["r"], global_step)
                         self.writter.add_scalar("charts/episodic_length", infos[i]["episode"]["l"], global_step)
                         break
+
                 
                 # insert data into buffer
                 data = obs, rewards, dones, ava, values, \
@@ -121,7 +129,10 @@ class VirtualHomeRunner:
             # self.trainer.prep_training()
             train_infos = self.trainer.train(self.buffer)      
             self.buffer.after_update()
-            
+
+            success_per_episode =  [1 if r > 0 else 0 for r in finished_rewards]
+            train_infos["success_rate"] = sum(success_per_episode) / len(success_per_episode) if len(success_per_episode) > 0 else 0
+
             # save model
             if (episode == episodes - 1):
                 self.save(episode)
