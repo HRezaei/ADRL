@@ -63,7 +63,7 @@ def main(args):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    envs = OvercookedEnv(all_args.env_name, all_args.n_rollout_threads, all_args.seed)
+    envs = OvercookedEnv(all_args.env_name, all_args.n_rollout_threads, all_args.seed, debug=all_args.save_gifs)
     eval_envs = OvercookedEnv(all_args.env_name, all_args.n_eval_rollout_threads, all_args.seed*5)
 
     config = {

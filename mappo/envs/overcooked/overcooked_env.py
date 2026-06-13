@@ -18,8 +18,8 @@ TASKLIST = ["tomato salad", "lettuce salad", "onion salad", "lettuce-tomato sala
 REWARDLIST = {"subtask finished": 0.2, "correct delivery": 1.0, "wrong delivery": -0.1, "step penalty": -0.001}
 
 class OvercookedEnv:
-    
-    def __init__(self, env_id, num_envs, seed) -> None:
+
+    def __init__(self, env_id, num_envs, seed, debug=False) -> None:
         if env_id == "Overcooked-LLMA-v4":
             self.task = 0
         elif env_id == "Overcooked-LLMA-v3":
@@ -31,10 +31,11 @@ class OvercookedEnv:
               'n_agent': 1,
               'obs_radius': 2,
               'mode': "vector",
-              'debug': False
+              'debug': debug
               }
         self.num_envs = num_envs
         self.num_agents = 1
+        self.task_name = TASKLIST[self.task]
         self.envs = gym.vector.SyncVectorEnv([make_env(env_id, seed + i, i, env_params) for i in range(num_envs)])
         print("env_id: ", env_id)
         
@@ -82,6 +83,9 @@ class OvercookedEnv:
             self.template2action.append({k:i for i,k in enumerate(text_obs["avaliable_action"])})
         return obs, ava
     
+    def render(self, env_idx=0):
+        return self.envs.envs[env_idx].render(mode='rgb_array')
+
     def close(self):
         self.envs.close()
         

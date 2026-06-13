@@ -1,6 +1,7 @@
 import time
 import os
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 from functools import reduce
 import torch
 from tensorboardX import SummaryWriter
@@ -42,6 +43,10 @@ class OvercookedRunner:
 
         self.envs = config['envs']
         self.eval_envs = config['eval_envs']
+        self.save_gifs = self.all_args.save_gifs
+        if self.save_gifs:
+            self.gif_dir = str(self.run_dir / 'screenshots')
+            os.makedirs(self.gif_dir, exist_ok=True)
         self.agent = LlamaLoRAgent(self.all_args.model_name, self.all_args.max_new_tokens, self.algo)
         self.buffer = LanguageBuffer(self.all_args, self.num_agents, self.agent.tokenizer.pad_token_id)
         
@@ -54,6 +59,20 @@ class OvercookedRunner:
         
         self.trajectories = None
         
+
+    def _save_frame(self, img_array, goal, action, save_path):
+        img = Image.fromarray(img_array)
+        banner_h = 52
+        canvas = Image.new('RGB', (img.width, img.height + banner_h), (30, 30, 30))
+        canvas.paste(img, (0, 0))
+        draw = ImageDraw.Draw(canvas)
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
+        except Exception:
+            font = ImageFont.load_default()
+        draw.text((5, img.height + 4),  f"Goal:   {goal}",   fill=(255, 220, 50),  font=font)
+        draw.text((5, img.height + 26), f"Action: {action}", fill=(255, 255, 255), font=font)
+        canvas.save(save_path)
 
     def run(self):
         
@@ -71,7 +90,20 @@ class OvercookedRunner:
 
                 # Obser reward and next obs
                 obs, rewards, dones, ava, infos = self.envs.step(actions)
-                
+
+                if self.save_gifs:
+                    for i in range(self.n_rollout_threads):
+                        img_array = self.envs.render(env_idx=i)
+                        if img_array is not None:
+                            ep_dir = os.path.join(self.gif_dir, f"env{i:02d}_ep{episode:04d}")
+                            os.makedirs(ep_dir, exist_ok=True)
+                            self._save_frame(
+                                img_array,
+                                goal=self.envs.task_name,
+                                action=str(actions[i][0]),
+                                save_path=os.path.join(ep_dir, f"step{step:04d}.png"),
+                            )
+
                 for i in range(self.n_rollout_threads):
                     if "episode" in infos[i].keys():
                         global_step = total_num_steps + step * self.n_rollout_threads + i
