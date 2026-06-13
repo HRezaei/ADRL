@@ -8,7 +8,7 @@ import random
 from pathlib import Path
 import torch
 sys.path.append("../../")
-from mappo.config import get_config
+from mappo.config import get_config, validate_tppo_config
 from mappo.envs.overcooked.overcooked_env import OvercookedEnv
 from mappo.runner.shared.overcooked_runner import OvercookedRunner as Runner
 
@@ -51,6 +51,7 @@ def main(args):
     all_args.log_interval = 1
     all_args.lr = 5e-7
     all_args.critic_lr = 1e-5
+    validate_tppo_config(all_args)
         
     run_dir = build_run_dir(all_args)
 

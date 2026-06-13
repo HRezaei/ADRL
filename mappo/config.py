@@ -286,4 +286,32 @@ def get_config():
     parser.add_argument("--run_dir_base", type=str, default=None,
                         help="by default None. set the path to save run results.")
 
+    parser.add_argument("--llm_class_full", type=str, default="LlamaFullAgent", help="the class name for full-scale LLM agent")
+    parser.add_argument("--llm_class_lora", type=str, default="LlamaLoRAgent", help="the class name for LoRA LLM agent")
     return parser
+
+
+def validate_tppo_config(args):
+    if not hasattr(args, "gradient_cp_steps"):
+        return
+
+    batch_size = args.n_rollout_threads * args.episode_length
+    mini_batch_size = batch_size // args.num_mini_batch
+    cp_batch_size = mini_batch_size // args.gradient_cp_steps
+
+    if mini_batch_size == 0:
+        raise ValueError(
+            "Invalid TPPO config: tppo_sampler() would produce mini_batch_size=0. "
+            f"Computed from n_rollout_threads={args.n_rollout_threads}, "
+            f"episode_length={args.episode_length}, num_mini_batch={args.num_mini_batch}. "
+            "Please reduce num_mini_batch or increase batch size."
+        )
+
+    if cp_batch_size == 0:
+        raise ValueError(
+            "Invalid TPPO config: llm_trainer_tppo.ppo_update() would produce cp_batch_size=0. "
+            f"Computed from mini_batch_size={mini_batch_size} and "
+            f"gradient_cp_steps={args.gradient_cp_steps}. "
+            "Please reduce gradient_cp_steps, reduce num_mini_batch, or increase "
+            "n_rollout_threads * episode_length."
+        )

@@ -8,6 +8,10 @@ from tensorboardX import SummaryWriter
 from mappo.models.codellama import Llama
 from mappo.agents.llama_lora_agent import LlamaLoRAgent
 from mappo.agents.llama_full_agent import LlamaFullAgent
+from mappo.agents.causal_full_agent import CausalFullAgent
+from mappo.agents.causal_lora_agent import CausalLoRAgent
+from mappo.agents.seq2seq_full_agent import Seq2SeqFullAgent
+from mappo.agents.seq2seq_lora_agent import Seq2SeqLoRAgent
 from mappo.utils.language_buffer import LanguageBuffer
 from mappo.trainers.llm_trainer_appo import APPOTrainer
 from mappo.trainers.llm_trainer_tppo import TPPOTrainer
@@ -56,10 +60,17 @@ class VirtualHomeRunner:
 
         self.envs = config['envs']
         self.eval_envs = config['eval_envs']
-        if self.use_full_scale:
-            self.agent = LlamaFullAgent(self.all_args.model_name, self.all_args.max_new_tokens, self.algo)
-        else:
-            self.agent = LlamaLoRAgent(self.all_args.model_name, self.all_args.max_new_tokens, self.algo)
+
+        # Select agent class via config strings (with defaults)
+        full_class_name = getattr(self.all_args, "llm_class_full", "LlamaFullAgent")
+        lora_class_name = getattr(self.all_args, "llm_class_lora", "LlamaLoRAgent")
+        target_class_name = full_class_name if self.use_full_scale else lora_class_name
+
+        agent_cls = globals().get(target_class_name)
+        if agent_cls is None:
+            raise ValueError(f"Configured LLM agent class not found: {target_class_name}")
+
+        self.agent = agent_cls(self.all_args.model_name, self.all_args.max_new_tokens, self.algo)
         self.buffer = LanguageBuffer(self.all_args, self.num_agents, self.agent.tokenizer.pad_token_id)
         
 

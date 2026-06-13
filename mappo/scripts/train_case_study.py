@@ -8,7 +8,7 @@ import random
 from pathlib import Path
 import torch
 sys.path.append("../../")
-from mappo.config import get_config
+from mappo.config import get_config, validate_tppo_config
 from mappo.envs.case_study.case_study_env import CaseStudyEnv
 from mappo.runner.shared.case_study_runner import CaseStudyRunner as Runner
 
@@ -48,6 +48,7 @@ def main(args):
     all_args.n_rollout_threads = 16
     all_args.log_interval = 1
     all_args.critic_lr = 5e-5
+    validate_tppo_config(all_args)
         
     run_dir = build_run_dir(all_args)
 

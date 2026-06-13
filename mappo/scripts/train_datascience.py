@@ -8,7 +8,7 @@ import numpy as np
 from pathlib import Path
 import torch
 sys.path.append("../../")
-from mappo.config import get_config
+from mappo.config import get_config, validate_tppo_config
 from mappo.envs.datascience.scikit_env import ScikitEnv
 from mappo.envs.datascience.datasci_env_wrappers import ShareSubprocVecEnv, ShareDummyVecEnv
 from mappo.runner.shared.datascience_runner import DataScienceRunner as Runner
@@ -79,6 +79,7 @@ def main(args):
     all_args.critic_lr = 5e-5
     all_args.lr = 1e-6
     all_args.split = False
+    validate_tppo_config(all_args)
     print("algorithm: {}, dataset_name: {}".format(all_args.algorithm_name, all_args.dataset_name))
         
     run_dir = build_run_dir(all_args)

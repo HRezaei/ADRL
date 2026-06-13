@@ -8,7 +8,7 @@ import random
 from pathlib import Path
 import torch
 sys.path.append("../../")
-from mappo.config import get_config
+from mappo.config import get_config, validate_tppo_config
 from mappo.envs.virtualhome.virtualhome_env import VirtualHomeEnv
 from mappo.runner.shared.virtualhome_runner import VirtualHomeRunner as Runner
 
@@ -54,6 +54,7 @@ def main(args):
     all_args.episode_length = 32
     all_args.n_rollout_threads = 4
     all_args.log_interval = 1
+    validate_tppo_config(all_args)
     print(all_args)
         
     run_dir = build_run_dir(all_args)

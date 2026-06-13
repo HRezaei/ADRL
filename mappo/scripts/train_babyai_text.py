@@ -10,7 +10,7 @@ import torch
 from mappo.scripts.train_virtualhome import build_run_dir
 
 sys.path.append("../../")
-from mappo.config import get_config
+from mappo.config import get_config, validate_tppo_config
 from mappo.envs.babyai_text.babyai_text_env import BabyAITextEnv
 from mappo.runner.shared.babyai_text_runner import BabyAITextRunner as Runner
 
@@ -44,11 +44,7 @@ def parse_args(args, parser):
 def main(args):
     parser = get_config()
     all_args = parse_args(args, parser)
-
-    # Skeleton defaults; tune later for specific BabyAI-text tasks.
-    all_args.episode_length = 32
-    all_args.n_rollout_threads = 4
-    all_args.log_interval = 1
+    validate_tppo_config(all_args)
 
     run_dir = build_run_dir(all_args)
 

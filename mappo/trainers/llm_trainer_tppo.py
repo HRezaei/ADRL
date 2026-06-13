@@ -2,6 +2,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from mappo.agents.causal_full_agent import CausalFullAgent
+from mappo.agents.llama_full_agent import LlamaFullAgent
 from mappo.utils.util import get_gard_norm, huber_loss, mse_loss
 from torch.distributions.categorical import Categorical
 from mappo.agents.llama_lora_code_agent import CodeLlamaLoRAgent
@@ -103,7 +106,7 @@ class TPPOTrainer:
         if isinstance(self.agent, CodeLlamaLoRAgent):
             values_infer = self.agent.get_token_values(np.concatenate(obs_batch), 
                                                        action_tokens_batch.view(-1, action_tokens_batch.shape[-1])).squeeze(-1)
-        elif isinstance(self.agent, LlamaLoRAgent):
+        elif isinstance(self.agent, (LlamaLoRAgent, LlamaFullAgent, CausalFullAgent)):
             values_infer = self.agent.get_token_values(np.concatenate(obs_batch), np.concatenate(action_batch)).squeeze(-1)
         else:
             raise ValueError("Invalid agent type")
@@ -132,7 +135,7 @@ class TPPOTrainer:
             if isinstance(self.agent, CodeLlamaLoRAgent):
                 pi_logits, _ = self.agent.infer_for_token_update(np.concatenate(obs_batch[start:end]), 
                                                                  action_tokens_batch[start:end].view(-1, action_tokens_batch.shape[-1]))
-            elif isinstance(self.agent, LlamaLoRAgent):
+            elif isinstance(self.agent, (LlamaLoRAgent, LlamaFullAgent, CausalFullAgent)):
                 pi_logits, _ = self.agent.infer_for_token_update(np.concatenate(obs_batch[start:end]), 
                                                                 np.concatenate(action_batch[start:end]))
             pi_logits = pi_logits.view(cp_batch_size, -1, *pi_logits.shape[-2:])
