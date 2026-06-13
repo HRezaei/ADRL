@@ -1,6 +1,7 @@
 from gym_macro_overcooked.macActEnvWrapper import MacEnvWrapper
 import gym
 import numpy as np
+from mappo.envs.overcooked.planner import OvercookedPlanner
 
 def make_env(env_id, seed, idx, env_params):
     def thunk():
@@ -37,19 +38,17 @@ class OvercookedEnv:
         self.num_agents = 1
         self.task_name = TASKLIST[self.task]
         self.envs = gym.vector.SyncVectorEnv([make_env(env_id, seed + i, i, env_params) for i in range(num_envs)])
+        self._planner = OvercookedPlanner(self.envs.envs[0].env)
         print("env_id: ", env_id)
         
         assert isinstance(self.envs.single_action_space, gym.spaces.Discrete)
         
-        # self.action_template, self.obs2text = init_env(env_id=env_id)
-
-        # self.template2action = {
-        #     k:i for i,k in enumerate(self.action_template)
-        # }
-        
     def reset(self):
         ori_obs = self.envs.reset()
         obs, ava = self.handle_obs(ori_obs)
+
+        self.plan = self._planner.plan()
+        self.plan_names = self._planner.get_action_names(self.plan)
 
         return obs, ava
         
