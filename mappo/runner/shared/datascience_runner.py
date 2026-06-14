@@ -35,6 +35,7 @@ class DataScienceRunner:
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
 
+        wandb.tensorboard.patch(root_logdir=self.log_dir)
         config_for_wandb = config.copy()
         config_for_wandb["all_args"] = vars(config_for_wandb["all_args"])
         config_for_wandb.pop("envs", None)
