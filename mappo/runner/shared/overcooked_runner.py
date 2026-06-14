@@ -100,6 +100,7 @@ class OvercookedRunner:
         
         total_num_steps = 0
         for episode in range(episodes):
+            finished_rewards = []
             for step in range(self.episode_length):
                 # Sample actions
                 values, actions, action_tokens, log_probs = self.collect(step)
@@ -125,6 +126,7 @@ class OvercookedRunner:
                 for i in range(self.n_rollout_threads):
                     if "episode" in infos[i].keys():
                         global_step = total_num_steps + step * self.n_rollout_threads + i
+                        finished_rewards.append(infos[i]["episode"]["r"])
                         print(f"global_step={global_step}, episodic_return={infos[i]['episode']['r']}, episodic_length={infos[i]['episode']['l']}")
                         self.writter.add_scalar("charts/episodic_return", infos[i]["episode"]["r"], global_step)
                         self.writter.add_scalar("charts/episodic_length", infos[i]["episode"]["l"], global_step)
@@ -136,16 +138,18 @@ class OvercookedRunner:
                 self.insert(data)
                 
             total_num_steps = (episode + 1) * self.episode_length * self.n_rollout_threads
-            
+
             # compute return and update network
             self.before_update()
             # self.trainer.prep_training()
-            train_infos = self.trainer.train(self.buffer)      
+            train_infos = self.trainer.train(self.buffer)
+            success_per_episode = [1 if r > 0 else 0 for r in finished_rewards] if finished_rewards else [0]
+            train_infos["success_rate"] = sum(success_per_episode) / len(success_per_episode)
             self.buffer.after_update()
 
             # log information
             if episode % self.log_interval == 0:
-                print("total_num_steps: ", total_num_steps)
+                print("total_num_steps: ", total_num_steps, ", success_rate: ", train_infos.get("success_rate", "N/A"))
                 # print("average_step_rewards: ", np.mean(self.buffer.rewards[self.buffer.pre_batch_index]))
                 self.log_train(train_infos, total_num_steps)
         
