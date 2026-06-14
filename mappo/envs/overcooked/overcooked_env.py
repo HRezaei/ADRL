@@ -22,56 +22,102 @@ class OvercookedEnv:
 
     def __init__(self, env_id, num_envs, seed, debug=False, use_planner=False) -> None:
         if env_id == "Overcooked-LLMA-v4":
-            self.task = 0
+            task_start = 0
         elif env_id == "Overcooked-LLMA-v3":
-            self.task = 3
-        env_params = {'grid_dim': [7,7],
-              'task': TASKLIST[self.task],
+            task_start = 0
+        env_params = {
+              'grid_dim': [7,7],
               'rewardList': REWARDLIST,
               'map_type': "A",
               'n_agent': 1,
               'obs_radius': 2,
               'mode': "vector",
-              'debug': debug
+              'debug': debug,
               }
         self.num_envs = num_envs
         self.num_agents = 1
-        self.task_name = TASKLIST[self.task]
-        self.envs = gym.vector.SyncVectorEnv([make_env(env_id, seed + i, i, env_params) for i in range(num_envs)])
+        self.envs = gym.vector.SyncVectorEnv([make_env(env_id, seed + i, i, {**env_params, 'task': TASKLIST[(task_start + i) % len(TASKLIST)]}) for i in range(num_envs)])
+        self._task_offset = task_start
         self._planner = OvercookedPlanner(self.envs.envs[0].env)
         self.use_planner = use_planner
         self.plan = None
         self.plan_names = None
         self.plan_step = np.zeros(self.num_envs, dtype=np.int64)
+        self._plans_by_task = {}
+        self.env_plans = None
+        self.env_plan_names = None
+        if env_id == "Overcooked-LLMA-v4":
+            self.task = 0
+        elif env_id == "Overcooked-LLMA-v3":
+            self.task = 3
         print("env_id: ", env_id)
         
         assert isinstance(self.envs.single_action_space, gym.spaces.Discrete)
+
+    def _set_env_task(self, env_idx, task_name):
+        raw = self.envs.envs[env_idx].env
+        raw.task = task_name
+        raw.oneHotTask = [1 if t == task_name else 0 for t in TASKLIST]
+
+    def _refresh_tasks(self):
+        for i in range(self.num_envs):
+            task_name = TASKLIST[(self._task_offset + i) % len(TASKLIST)]
+            self._set_env_task(i, task_name)
+        self._task_offset = (self._task_offset + self.num_envs) % len(TASKLIST)
+
+    def _ensure_plans(self, task_names):
+        unknown = [t for t in task_names if t not in self._plans_by_task]
+        if not unknown:
+            return
+        saved_task = self.envs.envs[0].env.task
+        for task_name in unknown:
+            self._set_env_task(0, task_name)
+            plan = self._planner.plan()
+            plan_names = self._planner.get_action_names(plan)
+            self._plans_by_task[task_name] = (plan, plan_names)
+        self._set_env_task(0, saved_task)
+
+    @property
+    def task_name(self):
+        return TASKLIST[self._task_offset % len(TASKLIST)]
+        
+    @property
+    def task_names(self):
+        return [self.envs.envs[i].env.task for i in range(self.num_envs)]
         
     def reset(self):
+        self._refresh_tasks()
         ori_obs = self.envs.reset()
         obs, ava = self.handle_obs(ori_obs)
 
-        self.plan = self._planner.plan()
-        self.plan_names = self._planner.get_action_names(self.plan)
+        # Per-env plans
+        current_tasks = [self.envs.envs[i].env.task for i in range(self.num_envs)]
+        self._ensure_plans(current_tasks)
+        self.env_plans = [self._plans_by_task[t][0] for t in current_tasks]
+        self.env_plan_names = [self._plans_by_task[t][1] for t in current_tasks]
+        self.plan = self.env_plans[0]
+        self.plan_names = self.env_plan_names[0]
         self.plan_step[:] = 0
 
         return obs, ava
 
     def get_planner_actions(self, ava):
-        if self.plan is None:
+        if self.env_plans is None:
             return None
         actions = np.empty((self.num_envs, self.num_agents), dtype=np.object_)
         for i in range(self.num_envs):
             action_list = ava[i, 0].split(",")
-            actions[i, 0] = action_list[self.plan[self.plan_step[i]]]
+            actions[i, 0] = action_list[self.env_plans[i][self.plan_step[i]]]
         return actions
 
     def advance_plan(self, dones):
         done_mask = np.squeeze(dones) > 0
         self.plan_step += 1
         self.plan_step[done_mask] = 0
-        if self.plan is not None:
-            self.plan_step = np.where(self.plan_step >= len(self.plan), 0, self.plan_step)
+        if self.env_plans is not None:
+            for i in range(self.num_envs):
+                if self.plan_step[i] >= len(self.env_plans[i]):
+                    self.plan_step[i] = 0
         
     def step(self, ori_action):
         action = self.handle_action(ori_action)

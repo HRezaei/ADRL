@@ -121,7 +121,7 @@ class OvercookedRunner:
                             os.makedirs(ep_dir, exist_ok=True)
                             self._save_frame(
                                 img_array,
-                                goal=self.envs.task_name,
+                                goal=self.envs.envs.envs[i].env.task,
                                 action=str(actions[i][0]),
                                 save_path=os.path.join(ep_dir, f"step{step:04d}.png"),
                             )
