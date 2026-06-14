@@ -100,8 +100,10 @@ class OvercookedRunner:
         episodes = int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
         
         total_num_steps = 0
+        plan_len = len(self.envs.plan) if self.envs.plan is not None else None
         for episode in range(episodes):
-            finished_rewards = []
+            finished_returns = []
+            finished_lengths = []
             for step in range(self.episode_length):
                 # Sample actions
                 values, actions, action_tokens, log_probs = self.collect(step)
@@ -127,7 +129,8 @@ class OvercookedRunner:
                 for i in range(self.n_rollout_threads):
                     if "episode" in infos[i].keys():
                         global_step = total_num_steps + step * self.n_rollout_threads + i
-                        finished_rewards.append(infos[i]["episode"]["r"])
+                        finished_returns.append(infos[i]["episode"]["r"])
+                        finished_lengths.append(infos[i]["episode"]["l"])
                         print(f"global_step={global_step}, episodic_return={infos[i]['episode']['r']}, episodic_length={infos[i]['episode']['l']}")
                         self.writter.add_scalar("charts/episodic_return", infos[i]["episode"]["r"], global_step)
                         self.writter.add_scalar("charts/episodic_length", infos[i]["episode"]["l"], global_step)
@@ -144,14 +147,18 @@ class OvercookedRunner:
             self.before_update()
             # self.trainer.prep_training()
             train_infos = self.trainer.train(self.buffer)
-            success_per_episode = [1 if r > 0 else 0 for r in finished_rewards] if finished_rewards else [0]
+            success_per_episode = [1 if r > 0 else 0 for r in finished_returns] if finished_returns else [0]
             train_infos["success_rate"] = sum(success_per_episode) / len(success_per_episode)
+
+            if plan_len is not None and finished_lengths:
+                waste = [l - plan_len for l in finished_lengths]
+                train_infos["waste_frames"] = sum(waste) / len(waste)
+                train_infos["waste_frames_percentage"] = sum(waste) / sum(finished_lengths)
             self.buffer.after_update()
 
             # log information
             if episode % self.log_interval == 0:
-                print("total_num_steps: ", total_num_steps, ", success_rate: ", train_infos.get("success_rate", "N/A"))
-                # print("average_step_rewards: ", np.mean(self.buffer.rewards[self.buffer.pre_batch_index]))
+                print(f"total_num_steps: {total_num_steps}, success_rate: {train_infos.get('success_rate', 'N/A'):.4f}, waste_frames: {train_infos.get('waste_frames', 'N/A')}")
                 self.log_train(train_infos, total_num_steps)
         
 
