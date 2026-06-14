@@ -20,7 +20,7 @@ def parse_args(args, parser):
     parser.add_argument('--max_new_tokens', type=int, default=10, help="max_new_tokens")
     parser.add_argument('--vacab_size', type=int, default=32000)
     parser.add_argument('--gradient_cp_steps', type=int, default=1)
-    parser.add_argument('--use_planner', action='store_true', default=False, help="Use planner solutions as teacher actions instead of sampling from LLM")
+    parser.add_argument('--use_planner', type=int, nargs='?', const=1, default=0, help="Use planner solutions as teacher actions instead of sampling from LLM")
     all_args = parser.parse_known_args(args)[0]
 
     return all_args

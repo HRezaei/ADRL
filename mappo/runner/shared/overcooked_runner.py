@@ -34,7 +34,7 @@ class OvercookedRunner:
         self.n_rollout_threads = self.all_args.n_rollout_threads
         self.log_interval = self.all_args.log_interval
         self.algo = self.all_args.algorithm_name
-        self.use_planner = getattr(self.all_args, 'use_planner', False)
+        self.use_planner = getattr(self.all_args, 'use_planner', 0)
 
         self.run_dir = config["run_dir"]
         self.log_dir = str(self.run_dir / 'logs')
