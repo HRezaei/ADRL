@@ -1,8 +1,10 @@
 import time
 import os
+import uuid
 import numpy as np
 from functools import reduce
 import torch
+import wandb
 from tensorboardX import SummaryWriter
 from mappo.models.codellama import Llama
 from mappo.agents.llama_critic_agent import LlamaCritic
@@ -21,6 +23,7 @@ def cal_token_mask(action_tokens_batch, pad_token):
     return token_mask
 
 class CaseStudyRunner:
+    game_name = "case_study"
     """Runner class to perform training, evaluation. and data collection for SMAC. See parent class for details."""
     def __init__(self, config):
         self.num_agents = config['num_agents']
@@ -35,6 +38,18 @@ class CaseStudyRunner:
         self.log_dir = str(self.run_dir / 'logs')
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
+
+        config_for_wandb = config.copy()
+        config_for_wandb["all_args"] = vars(config_for_wandb["all_args"])
+        config_for_wandb.pop("envs", None)
+        config_for_wandb.pop("eval_envs", None)
+        wandb.init(
+            project="adrl",
+            sync_tensorboard=True,
+            settings=wandb.Settings(_service_wait=300, code_dir="./mappo"),
+            config=config_for_wandb,
+            name=f"{self.game_name}_{uuid.uuid4().hex[:8]}",
+        )
         self.writter = SummaryWriter(self.log_dir)
         self.save_dir = str(self.run_dir / 'models/')
         if not os.path.exists(self.save_dir):

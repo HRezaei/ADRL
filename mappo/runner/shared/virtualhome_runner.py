@@ -1,5 +1,6 @@
 import time
 import os
+import uuid
 from math import nan
 
 import numpy as np
@@ -29,6 +30,7 @@ def cal_token_mask(action_tokens_batch, pad_token):
     return token_mask
 
 class VirtualHomeRunner:
+    game_name = "virtualhome"
     """Runner class to perform training, evaluation. and data collection for SMAC. See parent class for details."""
     def __init__(self, config):
         self.num_agents = config['num_agents']
@@ -54,6 +56,7 @@ class VirtualHomeRunner:
             sync_tensorboard=True,
             settings=wandb.Settings(_service_wait=300, code_dir="./mappo"),
             config=config_for_wandb,
+            name=f"{self.game_name}_{uuid.uuid4().hex[:8]}",
         )
         self.writter = SummaryWriter(self.log_dir)
         self.save_dir = str(self.run_dir / 'models/')

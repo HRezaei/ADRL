@@ -4,6 +4,7 @@ from mappo.runner.shared.virtualhome_runner import VirtualHomeRunner
 
 
 class BabyAITextRunner(VirtualHomeRunner):
+    game_name = "babyai"
     def run(self):
 
         obs, ava = self.envs.reset()
