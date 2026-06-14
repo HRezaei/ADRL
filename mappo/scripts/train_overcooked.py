@@ -20,6 +20,7 @@ def parse_args(args, parser):
     parser.add_argument('--max_new_tokens', type=int, default=10, help="max_new_tokens")
     parser.add_argument('--vacab_size', type=int, default=32000)
     parser.add_argument('--gradient_cp_steps', type=int, default=1)
+    parser.add_argument('--use_planner', action='store_true', default=False, help="Use planner solutions as teacher actions instead of sampling from LLM")
     all_args = parser.parse_known_args(args)[0]
 
     return all_args
@@ -63,7 +64,7 @@ def main(args):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    envs = OvercookedEnv(all_args.env_name, all_args.n_rollout_threads, all_args.seed, debug=all_args.save_gifs)
+    envs = OvercookedEnv(all_args.env_name, all_args.n_rollout_threads, all_args.seed, debug=all_args.save_gifs, use_planner=all_args.use_planner)
     eval_envs = OvercookedEnv(all_args.env_name, all_args.n_eval_rollout_threads, all_args.seed*5)
 
     config = {

@@ -31,6 +31,7 @@ class OvercookedRunner:
         self.n_rollout_threads = self.all_args.n_rollout_threads
         self.log_interval = self.all_args.log_interval
         self.algo = self.all_args.algorithm_name
+        self.use_planner = getattr(self.all_args, 'use_planner', False)
 
         self.run_dir = config["run_dir"]
         self.log_dir = str(self.run_dir / 'logs')
@@ -90,6 +91,8 @@ class OvercookedRunner:
 
                 # Obser reward and next obs
                 obs, rewards, dones, ava, infos = self.envs.step(actions)
+                if self.use_planner:
+                    self.envs.advance_plan(dones)
 
                 if self.save_gifs:
                     for i in range(self.n_rollout_threads):
@@ -136,8 +139,18 @@ class OvercookedRunner:
     def collect(self, step):
         # self.trainer.prep_rollout()
         
-        behaviour_data = self.agent.infer_for_rollout(np.concatenate(self.buffer.obs[self.buffer.cur_batch_index, step]),
-                                                np.concatenate(self.buffer.available_actions[self.buffer.cur_batch_index, step]))
+        obs_concat = np.concatenate(self.buffer.obs[self.buffer.cur_batch_index, step])
+        ava_concat = np.concatenate(self.buffer.available_actions[self.buffer.cur_batch_index, step])
+
+        teacher_actions = None
+        if self.use_planner:
+            planner_out = self.envs.get_planner_actions(
+                self.buffer.available_actions[self.buffer.cur_batch_index, step]
+            )
+            if planner_out is not None:
+                teacher_actions = np.concatenate(planner_out)
+        
+        behaviour_data = self.agent.infer_for_rollout(obs_concat, ava_concat, actions=teacher_actions)
         actions, action_tokens, values, log_probs = behaviour_data
         
         # [self.envs, agents]

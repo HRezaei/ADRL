@@ -274,8 +274,8 @@ class LlamaLoRAgent:
             return kl, expected_values
 
     @torch.no_grad()
-    def infer_for_rollout(self, obs, ava):
-        actions, action_tokens, action_log_probs, _ = self.get_actions(obs, ava)
+    def infer_for_rollout(self, obs, ava, actions=None):
+        actions, action_tokens, action_log_probs, _ = self.get_actions(obs, ava, actions=actions)
         
         if self.algo == "TWOSOME":
             values = self.get_action_values(obs)

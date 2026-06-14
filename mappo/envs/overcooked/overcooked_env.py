@@ -20,7 +20,7 @@ REWARDLIST = {"subtask finished": 0.2, "correct delivery": 1.0, "wrong delivery"
 
 class OvercookedEnv:
 
-    def __init__(self, env_id, num_envs, seed, debug=False) -> None:
+    def __init__(self, env_id, num_envs, seed, debug=False, use_planner=False) -> None:
         if env_id == "Overcooked-LLMA-v4":
             self.task = 0
         elif env_id == "Overcooked-LLMA-v3":
@@ -39,6 +39,10 @@ class OvercookedEnv:
         self.task_name = TASKLIST[self.task]
         self.envs = gym.vector.SyncVectorEnv([make_env(env_id, seed + i, i, env_params) for i in range(num_envs)])
         self._planner = OvercookedPlanner(self.envs.envs[0].env)
+        self.use_planner = use_planner
+        self.plan = None
+        self.plan_names = None
+        self.plan_step = np.zeros(self.num_envs, dtype=np.int64)
         print("env_id: ", env_id)
         
         assert isinstance(self.envs.single_action_space, gym.spaces.Discrete)
@@ -49,8 +53,25 @@ class OvercookedEnv:
 
         self.plan = self._planner.plan()
         self.plan_names = self._planner.get_action_names(self.plan)
+        self.plan_step[:] = 0
 
         return obs, ava
+
+    def get_planner_actions(self, ava):
+        if self.plan is None:
+            return None
+        actions = np.empty((self.num_envs, self.num_agents), dtype=np.object_)
+        for i in range(self.num_envs):
+            action_list = ava[i, 0].split(",")
+            actions[i, 0] = action_list[self.plan[self.plan_step[i]]]
+        return actions
+
+    def advance_plan(self, dones):
+        done_mask = np.squeeze(dones) > 0
+        self.plan_step += 1
+        self.plan_step[done_mask] = 0
+        if self.plan is not None:
+            self.plan_step = np.where(self.plan_step >= len(self.plan), 0, self.plan_step)
         
     def step(self, ori_action):
         action = self.handle_action(ori_action)
