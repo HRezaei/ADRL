@@ -62,8 +62,24 @@ class OvercookedPlanner:
             parts.append(1 if d.holding is not None else 0)
         return tuple(parts)
 
+    @staticmethod
+    def _parse_recipe(task_name):
+        parts = task_name.replace(" salad", "").split("-")
+        return set(p.capitalize() for p in parts if p)
+
     def _success(self, e):
-        return any(d.holding is not None for d in e.delivery)
+        required = self._parse_recipe(self._env.task)
+        for d in e.delivery:
+            if d.holding is None:
+                continue
+            if not required:
+                continue
+            if not hasattr(d.holding, 'containing'):
+                continue
+            delivered = set(type(c).__name__ for c in d.holding.containing)
+            if delivered == required:
+                return True
+        return False
 
     def plan(self):
         task_key = str(self._env.task)

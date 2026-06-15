@@ -38,7 +38,7 @@ class OvercookedEnv:
         self.num_agents = 1
         self.envs = gym.vector.SyncVectorEnv([make_env(env_id, seed + i, i, {**env_params, 'task': TASKLIST[(task_start + i) % len(TASKLIST)]}) for i in range(num_envs)])
         self._task_offset = task_start
-        self._planner = OvercookedPlanner(self.envs.envs[0].env)
+        self._planner = OvercookedPlanner(self.envs.envs[0].env.unwrapped)
         self.use_planner = use_planner
         self.plan = None
         self.plan_names = None
@@ -55,7 +55,7 @@ class OvercookedEnv:
         assert isinstance(self.envs.single_action_space, gym.spaces.Discrete)
 
     def _set_env_task(self, env_idx, task_name):
-        raw = self.envs.envs[env_idx].env
+        raw = self.envs.envs[env_idx].env.unwrapped
         raw.task = task_name
         raw.oneHotTask = [1 if t == task_name else 0 for t in TASKLIST]
 
@@ -69,7 +69,7 @@ class OvercookedEnv:
         unknown = [t for t in task_names if t not in self._plans_by_task]
         if not unknown:
             return
-        saved_task = self.envs.envs[0].env.task
+        saved_task = self.envs.envs[0].env.unwrapped.task
         for task_name in unknown:
             self._set_env_task(0, task_name)
             plan = self._planner.plan()
@@ -83,7 +83,7 @@ class OvercookedEnv:
         
     @property
     def task_names(self):
-        return [self.envs.envs[i].env.task for i in range(self.num_envs)]
+        return [self.envs.envs[i].env.unwrapped.task for i in range(self.num_envs)]
         
     def reset(self):
         self._refresh_tasks()
@@ -91,7 +91,7 @@ class OvercookedEnv:
         obs, ava = self.handle_obs(ori_obs)
 
         # Per-env plans
-        current_tasks = [self.envs.envs[i].env.task for i in range(self.num_envs)]
+        current_tasks = [self.envs.envs[i].env.unwrapped.task for i in range(self.num_envs)]
         self._ensure_plans(current_tasks)
         self.env_plans = [self._plans_by_task[t][0] for t in current_tasks]
         self.env_plan_names = [self._plans_by_task[t][1] for t in current_tasks]
@@ -103,6 +103,8 @@ class OvercookedEnv:
 
     def get_planner_actions(self, ava):
         if self.env_plans is None:
+            return None
+        if any(p is None for p in self.env_plans):
             return None
         actions = np.empty((self.num_envs, self.num_agents), dtype=np.object_)
         for i in range(self.num_envs):
@@ -116,7 +118,9 @@ class OvercookedEnv:
         self.plan_step[done_mask] = 0
         if self.env_plans is not None:
             for i in range(self.num_envs):
-                if self.plan_step[i] >= len(self.env_plans[i]):
+                if self.env_plans[i] is None:
+                    self.plan_step[i] = 0
+                elif self.plan_step[i] >= len(self.env_plans[i]):
                     self.plan_step[i] = 0
         
     def step(self, ori_action):

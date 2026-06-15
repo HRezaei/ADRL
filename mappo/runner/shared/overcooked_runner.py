@@ -58,6 +58,9 @@ class OvercookedRunner:
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
 
+        self.games_json_path = str(self.run_dir / 'games.json')
+        self.games_record = {i: [] for i in range(self.n_rollout_threads)}
+
         self.envs = config['envs']
         self.eval_envs = config['eval_envs']
         self.save_gifs = self.all_args.save_gifs
@@ -91,14 +94,51 @@ class OvercookedRunner:
         draw.text((5, img.height + 26), f"Action: {action}", fill=(255, 255, 255), font=font)
         canvas.save(save_path)
 
+    def _flush_games_json(self):
+        with open(self.games_json_path, 'w') as f:
+            json.dump(self.games_record, f, indent=2)
+
     def run(self):
-        
+
+        env_seeds = [self.all_args.seed + i for i in range(self.n_rollout_threads)]
+
         obs, ava = self.envs.reset()
         self.buffer.obs[self.buffer.cur_batch_index, 0] = obs.copy()
         self.buffer.available_actions[self.buffer.cur_batch_index, 0] = ava.copy()
 
         episodes = int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
-        
+
+        def _gold_to_text(i, ava_i):
+            """Map planner indices to text action names using current ava."""
+            plan = self.envs.env_plans[i] if self.envs.env_plans is not None else None
+            if plan is None:
+                return None
+            action_list = ava_i.split(",")
+            return [action_list[idx] for idx in plan]
+
+        # Per-env tracking — split at done/reset boundaries
+        ep_actions = [[] for _ in range(self.n_rollout_threads)]
+        ep_seg_start = [0 for _ in range(self.n_rollout_threads)]
+        ep_task = [self.envs.envs.envs[i].env.task for i in range(self.n_rollout_threads)]
+        ep_gold_text = [_gold_to_text(i, ava[i, 0]) for i in range(self.n_rollout_threads)]
+
+        def _record_seg(i, episode_end):
+            if ep_gold_text[i] is not None and ep_actions[i]:
+                self.games_record[i].append({
+                    "episode": ep_seg_start[i],
+                    "seed": env_seeds[i],
+                    "task": ep_task[i],
+                    "gold_path": ep_gold_text[i],
+                    "agent_actions": ep_actions[i][:],
+                })
+                if episode_end:
+                    ep_actions[i] = []
+                else:
+                    ep_actions[i] = []
+                    ep_seg_start[i] = episode
+                    ep_task[i] = self.envs.envs.envs[i].env.task
+                    ep_gold_text[i] = _gold_to_text(i, ava[i, 0])
+
         total_num_steps = 0
         plan_len = len(self.envs.plan) if self.envs.plan is not None else None
         for episode in range(episodes):
@@ -108,10 +148,18 @@ class OvercookedRunner:
                 # Sample actions
                 values, actions, action_tokens, log_probs = self.collect(step)
 
+                for i in range(self.n_rollout_threads):
+                    ep_actions[i].append(str(actions[i][0]))
+
                 # Obser reward and next obs
                 obs, rewards, dones, ava, infos = self.envs.step(actions)
                 if self.use_planner:
                     self.envs.advance_plan(dones)
+
+                # Record segments that finished this step (env auto-resets on done)
+                for i in range(self.n_rollout_threads):
+                    if dones[i]:
+                        _record_seg(i, episode_end=False)
 
                 if self.save_gifs:
                     for i in range(self.n_rollout_threads):
@@ -140,8 +188,12 @@ class OvercookedRunner:
                 data = obs, rewards, dones, ava, values, \
                        actions, action_tokens, log_probs
                 self.insert(data)
-                
+
             total_num_steps = (episode + 1) * self.episode_length * self.n_rollout_threads
+
+            # Record any remaining segment for each env at episode boundary
+            for i in range(self.n_rollout_threads):
+                _record_seg(i, episode_end=True)
 
             # compute return and update network
             self.before_update()
@@ -160,6 +212,8 @@ class OvercookedRunner:
             if episode % self.log_interval == 0:
                 print(f"total_num_steps: {total_num_steps}, success_rate: {train_infos.get('success_rate', 'N/A'):.4f}, waste_frames: {train_infos.get('waste_frames', 'N/A')}")
                 self.log_train(train_infos, total_num_steps)
+
+            self._flush_games_json()
         
 
     @torch.no_grad()
