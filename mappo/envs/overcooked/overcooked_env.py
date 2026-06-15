@@ -1,22 +1,35 @@
+import random
 from gym_macro_overcooked.macActEnvWrapper import MacEnvWrapper
 import gym
 import numpy as np
 from mappo.envs.overcooked.planner import OvercookedPlanner
 
+TASKLIST = ["tomato salad", "lettuce salad", "onion salad", "lettuce-tomato salad", "onion-tomato salad", "lettuce-onion salad", "lettuce-onion-tomato salad"]
+REWARDLIST = {"subtask finished": 0.2, "correct delivery": 1.0, "wrong delivery": -0.1, "step penalty": -0.001}
+
+
+class RandomizingWrapper(gym.Wrapper):
+    """Randomizes task on every reset (full or mid-batch auto-reset)."""
+
+    def reset(self, **kwargs):
+        inner = self.env.unwrapped
+        task = random.choice(TASKLIST)
+        inner.task = task
+        inner.oneHotTask = [1 if t == task else 0 for t in TASKLIST]
+        return super().reset(**kwargs)
+
+
 def make_env(env_id, seed, idx, env_params):
     def thunk():
-
         env = gym.make(env_id, **env_params)
+        env = RandomizingWrapper(env)
         env = MacEnvWrapper(env)
         env.seed(seed)
         env.action_space.seed(seed)
         env.observation_space.seed(seed)
         return env
-
     return thunk
 
-TASKLIST = ["tomato salad", "lettuce salad", "onion salad", "lettuce-tomato salad", "onion-tomato salad", "lettuce-onion salad", "lettuce-onion-tomato salad"]
-REWARDLIST = {"subtask finished": 0.2, "correct delivery": 1.0, "wrong delivery": -0.1, "step penalty": -0.001}
 
 class OvercookedEnv:
 
@@ -37,7 +50,6 @@ class OvercookedEnv:
         self.num_envs = num_envs
         self.num_agents = 1
         self.envs = gym.vector.SyncVectorEnv([make_env(env_id, seed + i, i, {**env_params, 'task': TASKLIST[(task_start + i) % len(TASKLIST)]}) for i in range(num_envs)])
-        self._task_offset = task_start
         self._planner = OvercookedPlanner(self.envs.envs[0].env.unwrapped)
         self.use_planner = use_planner
         self.plan = None
@@ -51,26 +63,19 @@ class OvercookedEnv:
         elif env_id == "Overcooked-LLMA-v3":
             self.task = 3
         print("env_id: ", env_id)
-        
+
         assert isinstance(self.envs.single_action_space, gym.spaces.Discrete)
+
+        self._precompute_all_plans()
 
     def _set_env_task(self, env_idx, task_name):
         raw = self.envs.envs[env_idx].env.unwrapped
         raw.task = task_name
         raw.oneHotTask = [1 if t == task_name else 0 for t in TASKLIST]
 
-    def _refresh_tasks(self):
-        for i in range(self.num_envs):
-            task_name = TASKLIST[(self._task_offset + i) % len(TASKLIST)]
-            self._set_env_task(i, task_name)
-        self._task_offset = (self._task_offset + self.num_envs) % len(TASKLIST)
-
-    def _ensure_plans(self, task_names):
-        unknown = [t for t in task_names if t not in self._plans_by_task]
-        if not unknown:
-            return
+    def _precompute_all_plans(self):
         saved_task = self.envs.envs[0].env.unwrapped.task
-        for task_name in unknown:
+        for task_name in TASKLIST:
             self._set_env_task(0, task_name)
             plan = self._planner.plan()
             plan_names = self._planner.get_action_names(plan)
@@ -79,20 +84,17 @@ class OvercookedEnv:
 
     @property
     def task_name(self):
-        return TASKLIST[self._task_offset % len(TASKLIST)]
-        
+        return self.envs.envs[0].env.unwrapped.task
+
     @property
     def task_names(self):
         return [self.envs.envs[i].env.unwrapped.task for i in range(self.num_envs)]
-        
+
     def reset(self):
-        self._refresh_tasks()
         ori_obs = self.envs.reset()
         obs, ava = self.handle_obs(ori_obs)
 
-        # Per-env plans
         current_tasks = [self.envs.envs[i].env.unwrapped.task for i in range(self.num_envs)]
-        self._ensure_plans(current_tasks)
         self.env_plans = [self._plans_by_task[t][0] for t in current_tasks]
         self.env_plan_names = [self._plans_by_task[t][1] for t in current_tasks]
         self.plan = self.env_plans[0]
@@ -122,18 +124,20 @@ class OvercookedEnv:
                     self.plan_step[i] = 0
                 elif self.plan_step[i] >= len(self.env_plans[i]):
                     self.plan_step[i] = 0
-        
+
     def step(self, ori_action):
         action = self.handle_action(ori_action)
         ori_next_obs, reward, done, info = self.envs.step(action)
         next_obs, ava = self.handle_obs(ori_next_obs)
         reward = np.repeat(reward[:, None], self.num_agents, axis=1)
         done = np.repeat(done[:, None], self.num_agents, axis=1)
-        
-        # for i in range(done.shape[0]):
-        #     if done[i][0] and reward[i][0] == 0:
-        #         reward[i][0] = -1
-        
+
+        for i in range(self.num_envs):
+            if done[i][0]:
+                new_task = self.envs.envs[i].env.unwrapped.task
+                self.env_plans[i] = self._plans_by_task[new_task][0]
+                self.env_plan_names[i] = self._plans_by_task[new_task][1]
+
         return next_obs, reward, done, ava, info
     
     def handle_action(self, ori_action):
