@@ -50,6 +50,7 @@ class OvercookedEnv:
         self.num_envs = num_envs
         self.num_agents = 1
         self.envs = gym.vector.SyncVectorEnv([make_env(env_id, seed + i, i, {**env_params, 'task': TASKLIST[(task_start + i) % len(TASKLIST)]}) for i in range(num_envs)])
+        self._run_indices = [-1] * self.num_envs
         self._planner = OvercookedPlanner(self.envs.envs[0].env.unwrapped)
         self.use_planner = use_planner
         self.plan = None
@@ -90,7 +91,12 @@ class OvercookedEnv:
     def task_names(self):
         return [self.envs.envs[i].env.unwrapped.task for i in range(self.num_envs)]
 
+    @property
+    def run_indices(self):
+        return self._run_indices
+
     def reset(self):
+        self._run_indices = [idx + 1 for idx in self._run_indices]
         ori_obs = self.envs.reset()
         obs, ava = self.handle_obs(ori_obs)
 
@@ -134,6 +140,7 @@ class OvercookedEnv:
 
         for i in range(self.num_envs):
             if done[i][0]:
+                self._run_indices[i] += 1
                 new_task = self.envs.envs[i].env.unwrapped.task
                 self.env_plans[i] = self._plans_by_task[new_task][0]
                 self.env_plan_names[i] = self._plans_by_task[new_task][1]

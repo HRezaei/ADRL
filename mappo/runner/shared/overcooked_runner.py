@@ -165,13 +165,14 @@ class OvercookedRunner:
                     for i in range(self.n_rollout_threads):
                         img_array = self.envs.render(env_idx=i)
                         if img_array is not None:
-                            ep_dir = os.path.join(self.gif_dir, f"env{i:02d}_ep{episode:04d}")
-                            os.makedirs(ep_dir, exist_ok=True)
+                            run_idx = self.envs.run_indices[i]
+                            run_dir = os.path.join(self.gif_dir, f"env{i:02d}_ep{episode:04d}_run{run_idx:02d}")
+                            os.makedirs(run_dir, exist_ok=True)
                             self._save_frame(
                                 img_array,
                                 goal=self.envs.envs.envs[i].env.task,
                                 action=str(actions[i][0]),
-                                save_path=os.path.join(ep_dir, f"step{step:04d}.png"),
+                                save_path=os.path.join(run_dir, f"step{step:04d}.png"),
                             )
 
                 for i in range(self.n_rollout_threads):
