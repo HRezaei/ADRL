@@ -81,7 +81,7 @@ def main(args):
         agent = LlamaLoRAgent(all_args.model_name, all_args.max_new_tokens, "TWOSOME", all_args.peft_path)
     
     # agent = LlamaLoRAgent(all_args.model_name, all_args.max_new_tokens, "APPO")
-    eval_envs = VirtualHomeEnv(all_args.env_name, all_args.n_eval_rollout_threads, all_args.seed, variant=all_args.variant)
+    eval_envs = VirtualHomeEnv(all_args.env_name, all_args.n_eval_rollout_threads, all_args.seed, variant=all_args.variant, save_gifs=all_args.save_gifs)
     # eval_envs = VirtualHomeEnv(all_args.env_name, all_args.n_eval_rollout_threads, all_args.seed)
 
     eval(agent, eval_envs, all_args.n_eval_rollout_threads, all_args.eval_episodes)

@@ -67,7 +67,7 @@ def main(args):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    envs = VirtualHomeEnv(all_args.env_name, all_args.n_rollout_threads, all_args.seed)
+    envs = VirtualHomeEnv(all_args.env_name, all_args.n_rollout_threads, all_args.seed, save_gifs=all_args.save_gifs, run_dir=run_dir)
     eval_envs = VirtualHomeEnv(all_args.env_name, all_args.n_eval_rollout_threads, all_args.seed*5)
 
     config = {
