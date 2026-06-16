@@ -2,17 +2,17 @@ from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 
 ROOM_LAYOUT = {
-    "kitchen":    {"x": 10,  "y": 10,  "w": 380, "h": 270, "color": "#FFF8E1", "label": "Kitchen"},
-    "livingroom": {"x": 410, "y": 10,  "w": 380, "h": 270, "color": "#E8F5E9", "label": "Living Room"},
-    "bathroom":   {"x": 10,  "y": 300, "w": 380, "h": 270, "color": "#E3F2FD", "label": "Bathroom"},
-    "bedroom":    {"x": 410, "y": 300, "w": 380, "h": 270, "color": "#F3E5F5", "label": "Bedroom"},
+    "kitchen":    {"x": 10,  "y": 50,  "w": 380, "h": 270, "color": "#FFF8E1", "label": "Kitchen"},
+    "livingroom": {"x": 410, "y": 50,  "w": 380, "h": 270, "color": "#E8F5E9", "label": "Living Room"},
+    "bathroom":   {"x": 10,  "y": 340, "w": 380, "h": 270, "color": "#E3F2FD", "label": "Bathroom"},
+    "bedroom":    {"x": 410, "y": 340, "w": 380, "h": 270, "color": "#F3E5F5", "label": "Bedroom"},
 }
 
 CHARACTER_ROOM_POS = {
-    "kitchen":    (200, 145),
-    "livingroom": (600, 145),
-    "bathroom":   (200, 435),
-    "bedroom":    (600, 435),
+    "kitchen":    (200, 185),
+    "livingroom": (600, 185),
+    "bathroom":   (200, 475),
+    "bedroom":    (600, 475),
 }
 
 def _get_font(size=14):
@@ -30,11 +30,21 @@ def _draw_rounded_rect(draw, xy, radius=8, fill=None, outline=None, width=1):
     draw.rounded_rectangle(xy, radius=radius, fill=fill, outline=outline, width=width)
 
 
-def render_v1(graph, action_text=None):
-    img = Image.new("RGB", (800, 600), "#F5F5F5")
+def render_v1(graph, action_text=None, goal_text=None, seed=None):
+    img = Image.new("RGB", (800, 640), "#F5F5F5")
     draw = ImageDraw.Draw(img)
     font = _get_font(13)
     font_small = _get_font(11)
+    font_goal = _get_font(14)
+
+    # goal banner
+    _draw_rounded_rect(draw, (4, 4, 796, 36), radius=6, fill="#E8EAF6", outline="#3F51B5", width=2)
+    if goal_text:
+        draw.text((12, 11), f"Goal: {goal_text}", fill="#1A237E", font=font_goal)
+    if seed is not None:
+        seed_label = f"seed={seed}"
+        seed_w = draw.textlength(seed_label, font=font_small)
+        draw.text((790 - seed_w, 13), seed_label, fill="#5C6BC0", font=font_small)
 
     nodes = {n["id"]: n for n in graph["nodes"]}
     edges = graph["edges"]
@@ -136,16 +146,26 @@ def render_v1(graph, action_text=None):
                   fill="#424242", font=font_small)
 
     if action_text:
-        draw.text((10, 575), f"Action: {action_text}", fill="#1B5E20", font=font)
+        draw.text((10, 615), f"Action: {action_text}", fill="#1B5E20", font=font)
 
     return np.array(img)
 
 
-def render_v2(graph, action_text=None):
-    img = Image.new("RGB", (800, 600), "#F5F5F5")
+def render_v2(graph, action_text=None, goal_text=None, seed=None):
+    img = Image.new("RGB", (800, 640), "#F5F5F5")
     draw = ImageDraw.Draw(img)
     font = _get_font(13)
     font_small = _get_font(11)
+    font_goal = _get_font(14)
+
+    # goal banner
+    _draw_rounded_rect(draw, (4, 4, 796, 36), radius=6, fill="#E8EAF6", outline="#3F51B5", width=2)
+    if goal_text:
+        draw.text((12, 11), f"Goal: {goal_text}", fill="#1A237E", font=font_goal)
+    if seed is not None:
+        seed_label = f"seed={seed}"
+        seed_w = draw.textlength(seed_label, font=font_small)
+        draw.text((790 - seed_w, 13), seed_label, fill="#5C6BC0", font=font_small)
 
     nodes = {n["id"]: n for n in graph["nodes"]}
     edges = graph["edges"]
@@ -272,6 +292,6 @@ def render_v2(graph, action_text=None):
                       "Near: " + ", ".join(close_names), fill="#424242", font=font_small)
 
     if action_text:
-        draw.text((10, 575), f"Action: {action_text}", fill="#1B5E20", font=font)
+        draw.text((10, 615), f"Action: {action_text}", fill="#1B5E20", font=font)
 
     return np.array(img)

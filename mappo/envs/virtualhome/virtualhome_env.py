@@ -7,6 +7,7 @@ from PIL import Image
 from mappo.envs.virtualhome.virtualhome_utils import init_env
 from mappo.envs.virtualhome.virtualhome_variants import init_variant_env
 from mappo.envs.virtualhome.virtualhome_render import render_v1, render_v2
+from mappo.envs.virtualhome.virtualhome_planner import VirtualHomePlanner
 
 def make_env(env_id, seed, idx, env_params):
     def thunk():
@@ -23,6 +24,7 @@ class VirtualHomeEnv:
         self.num_envs = num_envs
         self.num_agents = 1
         self.env_id = env_id
+        self.seed = seed
         self.envs = gym.vector.SyncVectorEnv([make_env(env_id, seed + i, i, env_params) for i in range(num_envs)])
         print("env_id: ", env_id)
         
@@ -46,6 +48,21 @@ class VirtualHomeEnv:
         self.run_dir = Path(run_dir) if run_dir is not None else None
         self._step_counts = np.zeros(num_envs, dtype=int)
         self._episode_counts = np.zeros(num_envs, dtype=int)
+
+        self.planner = None
+        self.gold_path = None
+        self.goal_text = ""
+
+    def _derive_goal(self):
+        try:
+            ge = self.envs.envs[0]
+            dict_obs, _ = ge.get_vector_obs(ge.env.state)
+            text, _ = ge.obs2text(dict_obs)
+            import re
+            m = re.search(r'(In order to .+?),?\s*your next step is to', text)
+            return m.group(1) if m else ""
+        except Exception:
+            return ""
         
     def reset(self):
         outcome = self.envs.reset()
@@ -54,6 +71,18 @@ class VirtualHomeEnv:
         else:
             ori_obs = outcome
         obs, ava = self.handle_obs(ori_obs)
+
+        try:
+            ge = self.envs.envs[0]
+            init_dict = ge.env.state  # graph dict from underlying VhGraphEnv
+            if self.planner is None:
+                action_scripts = ge.action_list
+                self.planner = VirtualHomePlanner(self.env_id, action_scripts)
+            self.gold_path = self.planner.plan(init_dict)
+            self.goal_text = self._derive_goal()
+        except Exception as e:
+            print(f"Gold path planning failed: {e}")
+            self.gold_path = None
 
         return obs, ava
         
@@ -85,7 +114,8 @@ class VirtualHomeEnv:
                 graph = self._get_graph_state(i)
                 if graph is not None:
                     try:
-                        img_arr = self._render_fn(graph, action_text=ori_action[i][0])
+                        img_arr = self._render_fn(graph, action_text=ori_action[i][0],
+                                                  goal_text=self.goal_text, seed=self.seed)
                         Image.fromarray(img_arr).save(step_base + ".png")
                     except Exception:
                         pass
