@@ -12,8 +12,37 @@ from PIL import Image, ImageDraw
 from babyai.bot import Bot
 
 
+class LoggingWrapper(gym.Wrapper):
+    """Perform whatever is needed to keep track of games played."""
+
+    def reset(self, **kwargs):
+        gold_steps = len(self.metadata.get("gold_path", {}).get("steps", []))
+        info_before_reset = {
+            'step_count': self.step_count,
+            'gold_steps': gold_steps,
+        }
+        reset_output = super().reset(**kwargs)
+        self.env.env.env.max_steps = 30
+        run_index = self.metadata.get('index_in_run', 0)
+        self.metadata['index_in_run'] = run_index + 1
+
+        if self.metadata.get("save_gifs", False):
+            _saved_image_path, _binary_image = save_image(
+                self,
+                file_name_prefix='AUTO',
+                return_binary=False,
+                screenshots_dir=str(self.metadata["run_dir"] / "screenshots")
+            )
+        self.metadata['gold_path'] = gold_paths(self)
+        self.metadata["info_before_reset"] = info_before_reset
+        return reset_output
+
+
+
 def make_env(env_id, seed, idx, env_params):
     def thunk():
+        save_gifs = env_params.pop("save_gifs", False)
+        run_dir = env_params.pop("run_dir", "/tmp/adrl")
         env = gym.make(env_id, seed=seed + idx, **env_params)
         if hasattr(env, "seed"):
             env.seed(seed + idx)
@@ -24,8 +53,11 @@ def make_env(env_id, seed, idx, env_params):
 
         env.metadata = env.metadata | {
             "process_index": idx,
-            "run_index": 0
+            "run_index": 0,
+            "save_gifs": save_gifs,
+            "run_dir": run_dir
         }
+        env = LoggingWrapper(env)
         return env
 
     return thunk
@@ -42,7 +74,12 @@ class BabyAITextEnv:
             # The skeleton can still be imported before dependencies are installed.
             pass
 
+        self.save_gifs = kwargs.get("save_gifs", False)
+        self.run_dir = kwargs.get("run_dir", "/tmp/adrl")
         env_params = env_params or {}
+        env_params["save_gifs"] = self.save_gifs
+        env_params["run_dir"] = self.run_dir
+
         self.num_envs = num_envs
         self.num_agents = 1
         self.seed = seed
@@ -56,8 +93,6 @@ class BabyAITextEnv:
         self.obs_history = [deque(maxlen=self.num_past_obs) for _ in range(num_envs)]
         self.action_history = [deque(maxlen=self.num_past_obs-1) for _ in range(num_envs)]
         self.prompt_question_mark = kwargs.get("prompt_question_mark", False)
-        self.save_gifs = kwargs.get("save_gifs", False)
-        self.run_dir = kwargs.get("run_dir", "/tmp/adrl")
 
         print("env_id: ", env_id)
         if not isinstance(self.envs.single_action_space, gym.spaces.Discrete):
@@ -65,8 +100,6 @@ class BabyAITextEnv:
 
     def reset(self):
         reset_out = self.envs.reset()
-        for env in self.envs.envs:
-            env.metadata['gold_path'] = gold_paths(env)
         self.obs_history = [deque(maxlen=self.num_past_obs) for _ in range(self.num_envs)]
         self.action_history = [deque(maxlen=self.num_past_obs-1) for _ in range(self.num_envs)]
         if isinstance(reset_out, tuple):
@@ -80,8 +113,6 @@ class BabyAITextEnv:
         action, action_texts = self.handle_action(ori_action)
         for i in range(self.num_envs):
             self.action_history[i].append(action_texts[i])
-        pre_step_count = [self.envs.envs[i].step_count for i in range(self.num_envs)]
-        pre_gold_steps = [len(self.envs.envs[i].metadata.get('gold_path', {}).get('steps', [])) for i in range(self.num_envs)]
         step_out = self.envs.step(action)
 
         if len(step_out) == 5:
@@ -97,15 +128,8 @@ class BabyAITextEnv:
         done = np.asarray(done)
         for i in range(self.num_envs):
             if done[i]:
-                self.envs.envs[i].metadata['info_before_reset'] = {
-                    'step_count': pre_step_count[i],
-                    'gold_steps': pre_gold_steps[i],
-                }
                 self.obs_history[i].clear()
                 self.action_history[i].clear()
-                run_index = self.envs.envs[i].metadata.get('index_in_run', 0)
-                self.envs.envs[i].metadata['index_in_run'] = run_index + 1
-                self.envs.envs[i].metadata['gold_path'] = gold_paths(self.envs.envs[i])
 
         next_obs, ava = self.handle_obs(raw_next_obs)
         reward = np.repeat(np.asarray(reward)[:, None], self.num_agents, axis=1)
@@ -303,9 +327,12 @@ def gold_paths(env):
         env_copy = deepcopy(env)
         replay_data = env_copy.metadata.get('replay_data', {})
         steps = replay_data.get('steps', [])
-        seed = env_copy.metadata['seed']
-        env_copy.seed(seed)
-        env_copy.reset(seed=seed)
+        #seed = env_copy.metadata['seed']
+        # For now, I assume the env reaching here is already reset, so no need to reset with seed again here.
+        # However, if later I needed to recreate the env, I need to reset with seed, and then call reset N times
+        # where N is number of times reset() is called on the original env (i.e. index_in_run)
+        #env_copy.seed(seed)
+        #env_copy.reset(seed=seed, skip_gold_path_generation=True)
         #process_index = env_copy.metadata.get('glam_process_index', '')
         #run_index = env_copy.metadata.get('index_in_run', '')
         #saved_image = save_image(env_copy, f"gold_env{process_index}_{env_copy.spec.id}_run{run_index}_seed{seed}")
