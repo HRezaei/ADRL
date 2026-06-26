@@ -1,3 +1,4 @@
+import numpy as np
 from tqdm import tqdm
 
 from mappo.runner.shared.virtualhome_runner import VirtualHomeRunner
@@ -24,8 +25,7 @@ class BabyAITextRunner(VirtualHomeRunner):
             train_infos = self.trainer.train(self.buffer)
             self.buffer.after_update()
 
-            train_infos["success_rate"] = collect_logs["success_rate"]
-            train_infos["waste_frames"] = collect_logs["finished_waste"]
+            train_infos = train_infos | collect_logs
             # save model
             if (episode == episodes - 1):
                 self.save(episode)
@@ -37,9 +37,13 @@ class BabyAITextRunner(VirtualHomeRunner):
 
     def collect_experiences(self, episode):
         finished_rewards = []
-        finished_waste = []
-        total_num_steps = (episode + 1) * self.episode_length * self.n_rollout_threads
-        logs = {}
+        log_waste_frames = []
+        completed_frames = []
+        log_frames_to_win = []
+        log_waste_frames_to_win = []
+        num_frames = self.episode_length * self.n_rollout_threads
+        total_num_steps = (episode + 1) * num_frames
+        games_done = 0
         for step in tqdm(range(self.episode_length), desc="steps"):
             # Sample actions
             values, actions, action_tokens, log_probs = self.collect(step)
@@ -49,11 +53,18 @@ class BabyAITextRunner(VirtualHomeRunner):
 
             for i in range(self.n_rollout_threads):
                 if dones[i] or self.envs.envs.envs[i].steps_remaining == 0:
-                    finished_rewards.append(rewards[i])
+                    games_done += 1
+                    finished_reward = rewards[i]
+                    finished_rewards.append(finished_reward)
                     info = self.envs.envs.envs[i].metadata.get('info_before_reset', {})
                     gold_steps = info.get('gold_steps', 0)
                     actual_steps = info.get('step_count', 0)
-                    finished_waste.append(actual_steps - gold_steps)
+                    completed_frames.append(actual_steps)
+                    waste_frames = actual_steps - gold_steps
+                    log_waste_frames.append(waste_frames)
+                    if finished_reward > 0:
+                        log_frames_to_win.append(actual_steps)
+                        log_waste_frames_to_win.append(waste_frames)
                     #self.envs.envs.envs[i].max_steps = 40
                     global_step = total_num_steps + step * self.n_rollout_threads + i
                     print(
@@ -69,6 +80,24 @@ class BabyAITextRunner(VirtualHomeRunner):
             self.insert(data)
 
         success_per_episode =  [1 if r > 0 else 0 for r in finished_rewards]
-        logs["success_rate"] = sum(success_per_episode) / len(success_per_episode)
-        logs["finished_waste"] = sum(finished_waste)
-        return logs
+
+        log = {
+            "success_rate": sum(success_per_episode) / len(success_per_episode),
+            "num_frames": num_frames,
+            "episodes_done": games_done,
+            "mean_waste_frames": np.mean(log_waste_frames) if len(log_waste_frames) > 0 else float('nan'),
+            "mean_frames_to_win": np.mean(log_frames_to_win) if len(log_frames_to_win) > 0 else float('nan'),
+            "mean_waste_frames_to_win": np.mean(log_waste_frames_to_win) if len(log_waste_frames_to_win) > 0 else float(
+                'nan'),
+            "completed_frames": np.sum(completed_frames),
+            "waste_frames": np.sum(log_waste_frames) if len(log_waste_frames) > 0 else float('nan'),
+            "frames_to_win": np.sum(log_frames_to_win) if len(log_frames_to_win) > 0 else float('nan'),
+            "waste_frames_to_win": np.sum(log_waste_frames_to_win) if len(log_waste_frames_to_win) > 0 else float(
+                'nan'),
+        }
+
+        sum_completed_frames = log["completed_frames"]
+        log["waste_frames_percentage"] = (log["waste_frames"] / sum_completed_frames) if sum_completed_frames > 0 else float('nan')
+        log["waste_frames_to_win_percentage"] = (log["waste_frames_to_win"] / log["frames_to_win"]) if log["frames_to_win"] > 0 else float('nan')
+
+        return log
