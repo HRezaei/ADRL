@@ -65,6 +65,8 @@ class BabyAITextEnv:
 
     def reset(self):
         reset_out = self.envs.reset()
+        for env in self.envs.envs:
+            env.metadata['gold_path'] = gold_paths(env)
         self.obs_history = [deque(maxlen=self.num_past_obs) for _ in range(self.num_envs)]
         self.action_history = [deque(maxlen=self.num_past_obs-1) for _ in range(self.num_envs)]
         if isinstance(reset_out, tuple):
@@ -78,6 +80,8 @@ class BabyAITextEnv:
         action, action_texts = self.handle_action(ori_action)
         for i in range(self.num_envs):
             self.action_history[i].append(action_texts[i])
+        pre_step_count = [self.envs.envs[i].step_count for i in range(self.num_envs)]
+        pre_gold_steps = [len(self.envs.envs[i].metadata.get('gold_path', {}).get('steps', [])) for i in range(self.num_envs)]
         step_out = self.envs.step(action)
 
         if len(step_out) == 5:
@@ -93,6 +97,10 @@ class BabyAITextEnv:
         done = np.asarray(done)
         for i in range(self.num_envs):
             if done[i]:
+                self.envs.envs[i].metadata['info_before_reset'] = {
+                    'step_count': pre_step_count[i],
+                    'gold_steps': pre_gold_steps[i],
+                }
                 self.obs_history[i].clear()
                 self.action_history[i].clear()
                 run_index = self.envs.envs[i].metadata.get('index_in_run', 0)
