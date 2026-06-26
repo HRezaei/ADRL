@@ -60,11 +60,13 @@ class BabyAITextRunner(VirtualHomeRunner):
                     gold_steps = info.get('gold_steps', 0)
                     actual_steps = info.get('step_count', 0)
                     completed_frames.append(actual_steps)
-                    waste_frames = actual_steps - gold_steps
-                    log_waste_frames.append(waste_frames)
+                    waste_frames = actual_steps
+                    # All played frames are wasted, unless won case, in which gold_steps are subtracted
                     if finished_reward > 0:
+                        waste_frames -= gold_steps
                         log_frames_to_win.append(actual_steps)
                         log_waste_frames_to_win.append(waste_frames)
+                    log_waste_frames.append(waste_frames)
                     #self.envs.envs.envs[i].max_steps = 40
                     global_step = total_num_steps + step * self.n_rollout_threads + i
                     print(
@@ -82,7 +84,7 @@ class BabyAITextRunner(VirtualHomeRunner):
         success_per_episode =  [1 if r > 0 else 0 for r in finished_rewards]
 
         log = {
-            "success_rate": sum(success_per_episode) / len(success_per_episode),
+            "success_rate": sum(success_per_episode) / len(success_per_episode) if len(success_per_episode)>0 else 0,
             "num_frames": num_frames,
             "episodes_done": games_done,
             "mean_waste_frames": np.mean(log_waste_frames) if len(log_waste_frames) > 0 else float('nan'),
