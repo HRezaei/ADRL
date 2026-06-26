@@ -107,7 +107,10 @@ class CaseStudyRunner:
             # compute return and update network
             self.before_update()
             # self.trainer.prep_training()
-            train_infos = self.trainer.train(self.buffer)      
+            if self.all_args.skip_updating_model:
+                train_infos = {"value_loss": 0.0, "value_grad_norm": 0.0, "policy_loss": 0.0, "policy_grad_norm": 0.0}
+            else:
+                train_infos = self.trainer.train(self.buffer)      
             self.buffer.after_update()
 
             # log information

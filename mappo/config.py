@@ -288,6 +288,7 @@ def get_config():
 
     parser.add_argument("--llm_class_full", type=str, default="LlamaFullAgent", help="the class name for full-scale LLM agent")
     parser.add_argument("--llm_class_lora", type=str, default="LlamaLoRAgent", help="the class name for LoRA LLM agent")
+    parser.add_argument("--skip_updating_model", action='store_true', default=False, help="skip model update and log zero train_infos")
     return parser
 
 
