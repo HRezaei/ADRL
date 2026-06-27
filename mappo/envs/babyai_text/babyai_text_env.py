@@ -1,6 +1,7 @@
 import os
 from copy import deepcopy
 from hashlib import md5
+from typing import Tuple
 
 import gym
 import numpy as np
@@ -10,6 +11,7 @@ from collections import deque
 
 from PIL import Image, ImageDraw
 from babyai.bot import Bot
+from gym.core import ActType, ObsType
 
 
 class LoggingWrapper(gym.Wrapper):
@@ -37,13 +39,26 @@ class LoggingWrapper(gym.Wrapper):
         self.metadata["info_before_reset"] = info_before_reset
         return reset_output
 
+    def step(self, action: ActType) -> Tuple[ObsType, float, bool, bool, dict]:
+        step_outcome = super().step(action)
+        if self.metadata.get("save_gifs", False):
+            _saved_image_path, _binary_image = save_image(
+                self,
+                file_name_prefix='AUTO',
+                action=action,
+                return_binary=False,
+                reward=step_outcome[1],
+                screenshots_dir=str(self.metadata["run_dir"] / "screenshots")
+            )
+        return step_outcome
 
 
 def make_env(env_id, seed, idx, env_params):
     def thunk():
-        save_gifs = env_params.pop("save_gifs", False)
-        run_dir = env_params.pop("run_dir", "/tmp/adrl")
-        env = gym.make(env_id, seed=seed + idx, **env_params)
+        make_params = env_params.copy()
+        save_gifs = make_params.pop("save_gifs", False)
+        run_dir = make_params.pop("run_dir", "/tmp/adrl")
+        env = gym.make(env_id, seed=seed + idx, **make_params)
         if hasattr(env, "seed"):
             env.seed(seed + idx)
         if hasattr(env, "action_space") and hasattr(env.action_space, "seed"):
@@ -134,18 +149,6 @@ class BabyAITextEnv:
         next_obs, ava = self.handle_obs(raw_next_obs)
         reward = np.repeat(np.asarray(reward)[:, None], self.num_agents, axis=1)
         done = np.repeat(done[:, None], self.num_agents, axis=1)
-
-        if self.save_gifs:
-            for i in range(self.num_envs):
-
-                _saved_image_path, _binary_image = save_image(
-                    self.envs.envs[i],
-                    file_name_prefix='AUTO',
-                    action=action[i],
-                    return_binary=False,
-                    reward=reward[i].item(),
-                    screenshots_dir=str(self.run_dir / "screenshots")
-                )
 
         return next_obs, reward, done, ava, info
 
@@ -325,6 +328,7 @@ def gold_paths(env):
     target_cell = None
     try:
         env_copy = deepcopy(env)
+        env_copy.metadata["save_gifs"] = False
         replay_data = env_copy.metadata.get('replay_data', {})
         steps = replay_data.get('steps', [])
         #seed = env_copy.metadata['seed']
