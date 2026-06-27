@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -11,6 +13,11 @@ class BabyAITextRunner(VirtualHomeRunner):
     def __init__(self, config):
         super().__init__(config)
         self.use_planner = getattr(self.all_args, "use_planner", 0)
+        self.save_json_interval = getattr(self.all_args, "save_json_interval", 1)
+        self.games_json_path = str(self.run_dir / "games.json")
+        self.games_record = {i: [] for i in range(self.n_rollout_threads)}
+        self._current_game = [None] * self.n_rollout_threads
+        self._env_seeds = [self.all_args.seed + i for i in range(self.n_rollout_threads)]
 
     def run(self):
 
@@ -18,6 +25,8 @@ class BabyAITextRunner(VirtualHomeRunner):
         self.buffer.obs[self.buffer.cur_batch_index, 0] = obs.copy()
         self.buffer.available_actions[self.buffer.cur_batch_index, 0] = ava.copy()
         self.plan_step = np.zeros(self.n_rollout_threads, dtype=np.int64)
+        for i in range(self.n_rollout_threads):
+            self._start_new_game(i)
 
         episodes = int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
 
@@ -44,6 +53,11 @@ class BabyAITextRunner(VirtualHomeRunner):
             if episode % self.log_interval == 0:
                 print("total_num_steps: ", total_num_steps)
                 self.log_train(train_infos, total_num_steps)
+
+            if episode % self.save_json_interval == 0:
+                self._flush_games_json()
+
+        self._flush_games_json()
 
     @torch.no_grad()
     def collect(self, step):
@@ -73,6 +87,37 @@ class BabyAITextRunner(VirtualHomeRunner):
 
         return values, actions, action_tokens, log_probs
 
+    def _gold_path_to_strings(self, i):
+        gold_path = self.envs.envs.envs[i].metadata.get("gold_path", {})
+        return [int(s) for s in gold_path.get("steps", [])]
+
+    def _start_new_game(self, i):
+        self._current_game[i] = {
+            "seed": self._env_seeds[i],
+            "goal": self.envs.envs.envs[i].mission,
+            "index_in_run": self.envs.envs.envs[i].metadata.get("index_in_run", 0),
+            "gold_actions": self._gold_path_to_strings(i),
+            "actions": [],
+        }
+
+    def _finish_game(self, i, won):
+        game = self._current_game[i]
+        if game is None:
+            return
+        self.games_record[i].append({
+            "seed": game["seed"],
+            "goal": game["goal"],
+            "index_in_run": game["index_in_run"],
+            "won": won,
+            "actions": game["actions"],
+            "gold_actions": game["gold_actions"],
+        })
+        self._current_game[i] = None
+
+    def _flush_games_json(self):
+        with open(self.games_json_path, "w") as f:
+            json.dump(self.games_record, f, indent=2, default=str)
+
     def collect_experiences(self, episode):
         finished_rewards = []
         log_waste_frames = []
@@ -85,6 +130,13 @@ class BabyAITextRunner(VirtualHomeRunner):
         for step in tqdm(range(self.episode_length), desc="steps"):
             # Sample actions
             values, actions, action_tokens, log_probs = self.collect(step)
+
+            for i in range(self.n_rollout_threads):
+                if self._current_game[i] is not None:
+                    a = actions[i, 0]
+                    if isinstance(a, str):
+                        a = self.envs.available_actions.index(a)
+                    self._current_game[i]["actions"].append(int(a))
 
             # Obser reward and next obs
             obs, rewards, dones, ava, infos = self.envs.step(actions)
@@ -99,6 +151,8 @@ class BabyAITextRunner(VirtualHomeRunner):
             for i in range(self.n_rollout_threads):
                 if dones[i] or self.envs.envs.envs[i].steps_remaining == 0:
                     games_done += 1
+                    self._finish_game(i, bool(rewards[i].item() > 0))
+                    self._start_new_game(i)
                     finished_reward = rewards[i]
                     finished_rewards.append(finished_reward)
                     info = self.envs.envs.envs[i].metadata.get('info_before_reset', {})

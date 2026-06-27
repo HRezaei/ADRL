@@ -269,6 +269,7 @@ def get_config():
 
     # log parameters
     parser.add_argument("--log_interval", type=int, default=1, help="time duration between contiunous twice log printing.")
+    parser.add_argument("--save_json_interval", type=int, default=1, help="time duration between contiunous twice json saving.")
 
     # eval parameters
     parser.add_argument("--use_eval", action='store_true', default=False, help="by default, do not start evaluation. If set`, start evaluation alongside with training.")
