@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 from tqdm import tqdm
 
 from mappo.runner.shared.virtualhome_runner import VirtualHomeRunner
@@ -6,11 +7,17 @@ from mappo.runner.shared.virtualhome_runner import VirtualHomeRunner
 
 class BabyAITextRunner(VirtualHomeRunner):
     game_name = "babyai"
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.use_planner = getattr(self.all_args, "use_planner", 0)
+
     def run(self):
 
         obs, ava = self.envs.reset()
         self.buffer.obs[self.buffer.cur_batch_index, 0] = obs.copy()
         self.buffer.available_actions[self.buffer.cur_batch_index, 0] = ava.copy()
+        self.plan_step = np.zeros(self.n_rollout_threads, dtype=np.int64)
 
         episodes = int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
 
@@ -38,6 +45,34 @@ class BabyAITextRunner(VirtualHomeRunner):
                 print("total_num_steps: ", total_num_steps)
                 self.log_train(train_infos, total_num_steps)
 
+    @torch.no_grad()
+    def collect(self, step):
+        obs_concat = np.concatenate(self.buffer.obs[self.buffer.cur_batch_index, step])
+        ava_concat = np.concatenate(self.buffer.available_actions[self.buffer.cur_batch_index, step])
+
+        teacher_actions = None
+        if self.use_planner:
+            teacher_actions = np.empty(self.n_rollout_threads, dtype=object)
+            for i in range(self.n_rollout_threads):
+                gold_path = self.envs.envs.envs[i].metadata.get("gold_path", {})
+                steps = gold_path.get("steps", [])
+                step_idx = int(self.plan_step[i])
+                if step_idx < len(steps):
+                    teacher_actions[i] = self.envs.available_actions[int(steps[step_idx])]
+                else:
+                    teacher_actions = None
+                    break
+
+        behaviour_data = self.agent.infer_for_rollout(obs_concat, ava_concat, actions=teacher_actions)
+        actions, action_tokens, values, log_probs = behaviour_data
+
+        values = np.array(np.split(values, self.n_rollout_threads))
+        actions = np.array(np.split(actions, self.n_rollout_threads))
+        action_tokens = np.array(np.split(action_tokens, self.n_rollout_threads))
+        log_probs = np.array(np.split(log_probs, self.n_rollout_threads))
+
+        return values, actions, action_tokens, log_probs
+
     def collect_experiences(self, episode):
         finished_rewards = []
         log_waste_frames = []
@@ -53,6 +88,13 @@ class BabyAITextRunner(VirtualHomeRunner):
 
             # Obser reward and next obs
             obs, rewards, dones, ava, infos = self.envs.step(actions)
+
+            if self.use_planner:
+                for i in range(self.n_rollout_threads):
+                    if dones[i] or self.envs.envs.envs[i].steps_remaining == 0:
+                        self.plan_step[i] = 0
+                    else:
+                        self.plan_step[i] += 1
 
             for i in range(self.n_rollout_threads):
                 if dones[i] or self.envs.envs.envs[i].steps_remaining == 0:

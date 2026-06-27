@@ -38,6 +38,14 @@ def parse_args(args, parser):
         default=3,
         help="Number of past observations to use for prompt generation.",
     )
+    parser.add_argument(
+        "--use_planner",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Use gold path as teacher actions instead of sampling from LLM",
+    )
     return parser.parse_known_args(args)[0]
 
 
