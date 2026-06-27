@@ -1,4 +1,5 @@
 import json
+import time
 
 import numpy as np
 import torch
@@ -33,6 +34,7 @@ class BabyAITextRunner(VirtualHomeRunner):
         total_num_steps = 0
         for episode in tqdm(range(episodes), desc="episodes"):
 
+            update_start_time = time.time()
             collect_logs = self.collect_experiences(episode)
 
             # compute return and update network
@@ -43,6 +45,9 @@ class BabyAITextRunner(VirtualHomeRunner):
             else:
                 train_infos = self.trainer.train(self.buffer)
             self.buffer.after_update()
+
+            update_end_time = time.time()
+            collect_logs['fps'] = collect_logs["num_frames"] / (update_end_time - update_start_time)
 
             train_infos = train_infos | collect_logs
             # save model
