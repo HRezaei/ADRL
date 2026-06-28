@@ -54,7 +54,7 @@ class VirtualHomeRunner:
         del config_for_wandb["eval_envs"]
         wandb.init(
             project="adrl",
-            sync_tensorboard=True,
+            #sync_tensorboard=True,
             settings=wandb.Settings(_service_wait=300, code_dir="./mappo"),
             config=config_for_wandb,
             name=f"{self.game_name}_{uuid.uuid4().hex[:8]}",

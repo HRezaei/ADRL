@@ -3,6 +3,7 @@ import time
 
 import numpy as np
 import torch
+import wandb
 from tqdm import tqdm
 
 from mappo.runner.shared.virtualhome_runner import VirtualHomeRunner
@@ -58,7 +59,8 @@ class BabyAITextRunner(VirtualHomeRunner):
             total_num_steps += collect_logs["num_frames"]
             if episode % self.log_interval == 0:
                 print("total_num_steps: ", total_num_steps)
-                self.log_train(train_infos, total_num_steps)
+                #self.log_train(train_infos, total_num_steps)
+                wandb.log(train_infos, step=episode)
 
             if episode % self.save_json_interval == 0:
                 self._flush_games_json()
@@ -189,8 +191,8 @@ class BabyAITextRunner(VirtualHomeRunner):
                     global_step = total_num_steps + step * self.n_rollout_threads + i
                     print(
                         f"global_step={global_step}, episodic_return={rewards[i]}, episodic_length={0}, waste_frames={actual_steps - gold_steps}")
-                    self.writter.add_scalar("charts/episodic_return", rewards[i], global_step)
-                    self.writter.add_scalar("charts/episodic_length", 0, global_step)
+                    #self.writter.add_scalar("charts/episodic_return", rewards[i], global_step)
+                    #self.writter.add_scalar("charts/episodic_length", 0, global_step)
                     # self.writter.add_scalar("charts/waste_frames", actual_steps - gold_steps, global_step)
                     # break Original virtualhome runner has break here! I don't know why?!
 
