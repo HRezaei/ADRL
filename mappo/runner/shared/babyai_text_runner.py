@@ -119,6 +119,19 @@ class BabyAITextRunner(VirtualHomeRunner):
             "gold_actions": game["gold_actions"],
         })
         self._current_game[i] = None
+        if won:
+            self._rename_screenshots_dir(i, game["index_in_run"])
+
+    def _rename_screenshots_dir(self, env_idx, index_in_run):
+        save_gifs = self.envs.envs.envs[env_idx].metadata.get("save_gifs", False)
+        if not save_gifs:
+            return
+        process_index = self.envs.envs.envs[env_idx].metadata.get("process_index", "")
+        screenshots_dir = self.run_dir / "screenshots"
+        old_path = screenshots_dir / f"env{process_index}_run{index_in_run}"
+        new_path = screenshots_dir / f"env{process_index}_run{index_in_run}_won"
+        if old_path.exists():
+            old_path.rename(new_path)
 
     def _flush_games_json(self):
         with open(self.games_json_path, "w") as f:
