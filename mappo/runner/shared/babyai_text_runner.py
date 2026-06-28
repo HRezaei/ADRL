@@ -55,6 +55,7 @@ class BabyAITextRunner(VirtualHomeRunner):
                 self.save(episode)
 
             # log information
+            total_num_steps += collect_logs["num_frames"]
             if episode % self.log_interval == 0:
                 print("total_num_steps: ", total_num_steps)
                 self.log_train(train_infos, total_num_steps)
