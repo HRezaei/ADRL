@@ -34,14 +34,14 @@ class Seq2SeqFullAgent(LlamaFullAgent):
             model_name,
             torch_dtype=model_dtype,
         )
-        self.base_model.to(self.device)
+        self.base_model.to("cpu")
 
         self.max_new_tokens = max_new_tokens
 
         # For full-scale training, actor is the base model
         self.actor = self.base_model
         # Initialize critic using the inherited method
-        self.critic = self._init_critic().to(self.device)
+        self.critic = self._init_critic()
 
     def _get_decoder_start_token_id(self):
         return int(self.tokenizer.pad_token_id)

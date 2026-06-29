@@ -27,9 +27,9 @@ class CausalFullAgent(LlamaFullAgent):
             model_name,
             torch_dtype=model_dtype,
         )
-        self.base_model.to(self.device)
+        self.base_model.to("cpu")
 
         self.max_new_tokens = max_new_tokens
 
         self.actor = self.base_model
-        self.critic = self._init_critic().to(self.device)
+        self.critic = self._init_critic()

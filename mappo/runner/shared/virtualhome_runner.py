@@ -91,14 +91,19 @@ class VirtualHomeRunner:
         # Critic is not wrapped (its transformer is frozen with no_grad)
         if is_distributed() and self.use_full_scale:
             self.agent.actor = fsdp_wrap(self.agent.actor, device_id=self.local_rank)
-        model = getattr(self.agent, 'actor', self.agent.base_model)
-        total_params = sum(p.numel() for p in model.parameters())
-        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        wandb.config.update({
-            "model/total_params": total_params,
-            "model/trainable_params": trainable_params,
-            "model/trainable_pct": 100.0 * trainable_params / total_params if total_params > 0 else 0,
-        })
+            self.agent.critic = self.agent.critic.to(self.agent.device)
+        else:
+            self.agent.actor = self.agent.actor.to(self.agent.device)
+            self.agent.critic = self.agent.critic.to(self.agent.device)
+        if self.rank == 0:
+            model = getattr(self.agent, 'actor', self.agent.base_model)
+            total_params = sum(p.numel() for p in model.parameters())
+            trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            wandb.config.update({
+                "model/total_params": total_params,
+                "model/trainable_params": trainable_params,
+                "model/trainable_pct": 100.0 * trainable_params / total_params if total_params > 0 else 0,
+            })
         self.buffer = LanguageBuffer(self.all_args, self.num_agents, self.agent.tokenizer.pad_token_id)
         
 
