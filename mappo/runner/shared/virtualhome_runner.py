@@ -90,6 +90,13 @@ class VirtualHomeRunner:
         # FSDP-wrap actor for full-scale distributed training
         # Critic is not wrapped (its transformer is frozen with no_grad)
         if is_distributed() and self.use_full_scale:
+            # Break tied weights (e.g. T5 shared embedding / lm_head) before FSDP,
+            # since FSDP's parameter flattening cannot handle shared tensors.
+            if hasattr(self.agent.actor, 'lm_head') and hasattr(self.agent.actor, 'shared'):
+                if self.agent.actor.lm_head.weight is self.agent.actor.shared.weight:
+                    self.agent.actor.lm_head.weight = torch.nn.Parameter(
+                        self.agent.actor.lm_head.weight.clone()
+                    )
             self.agent.actor = fsdp_wrap(self.agent.actor, device_id=self.local_rank)
             self.agent.critic = self.agent.critic.to(self.agent.device)
         else:

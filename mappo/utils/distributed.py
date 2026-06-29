@@ -45,9 +45,9 @@ def fsdp_wrap(model, device_id, sharding_strategy=ShardingStrategy.FULL_SHARD, *
         reduce_dtype=torch.float16,
         buffer_dtype=torch.float16,
     )
+    model = model.to(f"cuda:{device_id}")
     return FSDP(
         model,
-        device_id=device_id,
         sharding_strategy=sharding_strategy,
         mixed_precision=mixed_precision,
         backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
