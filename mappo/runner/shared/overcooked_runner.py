@@ -222,6 +222,10 @@ class OvercookedRunner:
                 train_infos["waste_frames_percentage"] = sum(waste) / sum(finished_lengths)
             self.buffer.after_update()
 
+            # save model
+            if episode % self.all_args.model_save_interval == 0 or episode == episodes - 1:
+                self.save(episode)
+
             # log information
             if episode % self.log_interval == 0:
                 print(f"total_num_steps: {total_num_steps}, success_rate: {train_infos.get('success_rate', 'N/A'):.4f}, waste_frames: {train_infos.get('waste_frames', 'N/A')}")

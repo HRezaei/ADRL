@@ -151,7 +151,7 @@ class VirtualHomeRunner:
             train_infos["success_rate"] = sum(success_per_episode) / len(success_per_episode) if len(success_per_episode) > 0 else 0
 
             # save model
-            if (episode == episodes - 1):
+            if episode % self.all_args.model_save_interval == 0 or episode == episodes - 1:
                 self.save(episode)
 
             # log information

@@ -52,7 +52,7 @@ class BabyAITextRunner(VirtualHomeRunner):
 
             train_infos = train_infos | collect_logs
             # save model
-            if (episode == episodes - 1):
+            if episode % self.all_args.model_save_interval == 0 or episode == episodes - 1:
                 self.save(episode)
 
             # log information
