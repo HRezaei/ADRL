@@ -21,7 +21,7 @@ def parse_args(args, parser):
     parser.add_argument('--variant', type=str, default='Cheese', help="Which model to uese")
     parser.add_argument('--max_new_tokens', type=int, default=11, help="max_new_tokens")
     parser.add_argument('--vacab_size', type=int, default=32000)
-    parser.add_argument("--use_full_scale", action='store_true', default=False, help="by default False, whether to use full scale model.")
+    parser.add_argument("--use_full_scale", type=int, nargs="?", const=1, default=0, help="by default False, whether to use full scale model.")
     all_args = parser.parse_known_args(args)[0]
 
     return all_args

@@ -28,8 +28,10 @@ def parse_args(args, parser):
     parser.add_argument("--gradient_cp_steps", type=int, default=1)
     parser.add_argument(
         "--use_full_scale",
-        action="store_true",
-        default=False,
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
         help="Whether to use full-scale model weights.",
     )
     parser.add_argument(
