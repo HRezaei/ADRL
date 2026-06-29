@@ -9,10 +9,12 @@ import torch
 
 from mappo.scripts.train_virtualhome import build_run_dir
 
+import torch.distributed as dist
 sys.path.append("../../")
 from mappo.config import get_config, validate_tppo_config
 from mappo.envs.babyai_text.babyai_text_env import BabyAITextEnv
 from mappo.runner.shared.babyai_text_runner import BabyAITextRunner as Runner
+from mappo.utils.distributed import init_distributed, is_distributed
 
 
 def parse_args(args, parser):
@@ -52,11 +54,27 @@ def parse_args(args, parser):
 
 
 def main(args):
+    local_rank, rank, world_size = init_distributed()
+
     parser = get_config()
     all_args = parse_args(args, parser)
     validate_tppo_config(all_args)
 
-    run_dir = build_run_dir(all_args)
+    if is_distributed():
+        all_args.n_rollout_threads = max(1, all_args.n_rollout_threads // world_size)
+    if rank == 0:
+        print(all_args)
+
+    if is_distributed():
+        if rank == 0:
+            run_dir = build_run_dir(all_args)
+        else:
+            run_dir = None
+        run_dir_list = [run_dir]
+        dist.broadcast_object_list(run_dir_list, src=0)
+        run_dir = run_dir_list[0]
+    else:
+        run_dir = build_run_dir(all_args)
 
     random.seed(all_args.seed)
     np.random.seed(all_args.seed)
@@ -80,6 +98,7 @@ def main(args):
         "eval_envs": eval_envs,
         "num_agents": envs.num_agents,
         "run_dir": run_dir,
+        "local_rank": local_rank,
     }
 
     runner = Runner(config)
@@ -88,8 +107,12 @@ def main(args):
     if envs is not None:
         envs.close()
 
-    runner.writter.export_scalars_to_json(str(runner.log_dir + "/summary.json"))
-    runner.writter.close()
+    if rank == 0:
+        runner.writter.export_scalars_to_json(str(runner.log_dir + "/summary.json"))
+        runner.writter.close()
+
+    if is_distributed():
+        dist.destroy_process_group()
 
 
 if __name__ == "__main__":

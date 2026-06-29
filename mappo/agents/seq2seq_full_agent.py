@@ -7,9 +7,9 @@ from mappo.agents.llama_full_agent import LlamaFullAgent
 
 
 class Seq2SeqFullAgent(LlamaFullAgent):
-    def __init__(self, model_name, max_new_tokens, algo, load_path=None):
+    def __init__(self, model_name, max_new_tokens, algo, load_path=None, local_rank=0):
         if torch.cuda.is_available():
-            self.device = "cuda"
+            self.device = f"cuda:{local_rank}"
         elif torch.backends.mps.is_available():
             self.device = "mps"
         else:
@@ -29,7 +29,7 @@ class Seq2SeqFullAgent(LlamaFullAgent):
         if load_path is not None:
             model_name = load_path
 
-        model_dtype = torch.float16 if self.device == "cuda" else torch.float32
+        model_dtype = torch.float16 if self.device.startswith("cuda") else torch.float32
         self.base_model = AutoModelForSeq2SeqLM.from_pretrained(
             model_name,
             torch_dtype=model_dtype,

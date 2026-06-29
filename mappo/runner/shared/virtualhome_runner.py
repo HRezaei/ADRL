@@ -18,6 +18,8 @@ from mappo.agents.seq2seq_lora_agent import Seq2SeqLoRAgent
 from mappo.utils.language_buffer import LanguageBuffer
 from mappo.trainers.llm_trainer_appo import APPOTrainer
 from mappo.trainers.llm_trainer_tppo import TPPOTrainer
+from mappo.utils.distributed import is_distributed, get_local_rank, fsdp_wrap, full_state_dict
+import torch.distributed as dist
 import pickle
 from mappo.envs.datascience.prompts.scikit_prompts import *
 import json
@@ -41,29 +43,34 @@ class VirtualHomeRunner:
         self.log_interval = self.all_args.log_interval
         self.algo = self.all_args.algorithm_name
         self.use_full_scale = self.all_args.use_full_scale
+        self.local_rank = config.get("local_rank", 0)
+        self.rank = self.local_rank
 
         self.run_dir = config["run_dir"]
         self.log_dir = str(self.run_dir / 'logs')
-        if not os.path.exists(self.log_dir):
+        if self.rank == 0 and not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
 
-        wandb.tensorboard.patch(root_logdir=self.log_dir)
-        config_for_wandb = config.copy()
-        config_for_wandb["all_args"] = vars(config_for_wandb["all_args"])
-        del config_for_wandb["envs"]
-        del config_for_wandb["eval_envs"]
-        model_short = os.path.basename(self.all_args.model_name) if self.all_args.model_name else "unknown"
-        scale_tag = "full" if self.all_args.use_full_scale else "lora"
-        wandb.init(
-            project="adrl",
-            #sync_tensorboard=True,
-            settings=wandb.Settings(_service_wait=300, code_dir="./mappo"),
-            config=config_for_wandb,
-            name=f"{self.all_args.experiment_name}_{self.game_name}_{model_short}_{scale_tag}_{uuid.uuid4().hex[:8]}",
-        )
-        self.writter = SummaryWriter(self.log_dir)
+        if self.rank == 0:
+            wandb.tensorboard.patch(root_logdir=self.log_dir)
+            config_for_wandb = config.copy()
+            config_for_wandb["all_args"] = vars(config_for_wandb["all_args"])
+            del config_for_wandb["envs"]
+            del config_for_wandb["eval_envs"]
+            model_short = os.path.basename(self.all_args.model_name) if self.all_args.model_name else "unknown"
+            scale_tag = "full" if self.all_args.use_full_scale else "lora"
+            wandb.init(
+                project="adrl",
+                #sync_tensorboard=True,
+                settings=wandb.Settings(_service_wait=300, code_dir="./mappo"),
+                config=config_for_wandb,
+                name=f"{self.all_args.experiment_name}_{self.game_name}_{model_short}_{scale_tag}_{uuid.uuid4().hex[:8]}",
+            )
+            self.writter = SummaryWriter(self.log_dir)
+        else:
+            self.writter = None
         self.save_dir = str(self.run_dir / 'models/')
-        if not os.path.exists(self.save_dir):
+        if self.rank == 0 and not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
 
         self.envs = config['envs']
@@ -78,7 +85,12 @@ class VirtualHomeRunner:
         if agent_cls is None:
             raise ValueError(f"Configured LLM agent class not found: {target_class_name}")
 
-        self.agent = agent_cls(self.all_args.model_name, self.all_args.max_new_tokens, self.algo)
+        self.agent = agent_cls(self.all_args.model_name, self.all_args.max_new_tokens, self.algo, local_rank=self.local_rank)
+
+        # FSDP-wrap actor for full-scale distributed training
+        # Critic is not wrapped (its transformer is frozen with no_grad)
+        if is_distributed() and self.use_full_scale:
+            self.agent.actor = fsdp_wrap(self.agent.actor, device_id=self.local_rank)
         model = getattr(self.agent, 'actor', self.agent.base_model)
         total_params = sum(p.numel() for p in model.parameters())
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -126,8 +138,9 @@ class VirtualHomeRunner:
                     if "episode" in infos[i].keys():
                         global_step = total_num_steps + step * self.n_rollout_threads + i
                         print(f"global_step={global_step}, episodic_return={infos[i]['episode']['r']}, episodic_length={infos[i]['episode']['l']}")
-                        self.writter.add_scalar("charts/episodic_return", infos[i]["episode"]["r"], global_step)
-                        self.writter.add_scalar("charts/episodic_length", infos[i]["episode"]["l"], global_step)
+                        if self.writter is not None:
+                            self.writter.add_scalar("charts/episodic_return", infos[i]["episode"]["r"], global_step)
+                            self.writter.add_scalar("charts/episodic_length", infos[i]["episode"]["l"], global_step)
                         break
 
                 
@@ -206,10 +219,23 @@ class VirtualHomeRunner:
 
     def log_train(self, train_infos, total_num_steps):
         train_infos["average_step_rewards"] = np.mean(self.buffer.rewards[self.buffer.cur_batch_index])
+        if self.writter is None:
+            return
         for k, v in train_infos.items():
-            # print("k: ", k, ", v: ", v)
             self.writter.add_scalars(k, {k: v}, total_num_steps)
                 
     def save(self, episode):
         """Save policy's actor and critic networks."""
-        self.agent.save(self.save_dir, episode)
+        if is_distributed() and self.use_full_scale:
+            exp_path = os.path.join(self.save_dir, "episode_{:04d}".format(episode))
+            with full_state_dict(self.agent.actor):
+                state_dict = self.agent.actor.state_dict()
+                if self.rank == 0:
+                    os.makedirs(exp_path, exist_ok=True)
+                    base_model = getattr(self.agent, 'base_model', None)
+                    if base_model is not None and hasattr(base_model, 'config'):
+                        base_model.config.save_pretrained(exp_path)
+                    torch.save(state_dict, os.path.join(exp_path, "pytorch_model.bin"))
+            dist.barrier()
+        else:
+            self.agent.save(self.save_dir, episode)

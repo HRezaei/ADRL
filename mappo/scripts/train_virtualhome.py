@@ -11,6 +11,7 @@ sys.path.append("../../")
 from mappo.config import get_config, validate_tppo_config
 from mappo.envs.virtualhome.virtualhome_env import VirtualHomeEnv
 from mappo.runner.shared.virtualhome_runner import VirtualHomeRunner as Runner
+from mappo.utils.distributed import init_distributed, is_distributed
 
 
 def parse_args(args, parser):
@@ -48,16 +49,29 @@ def build_run_dir(all_args):
     return run_dir
 
 def main(args):
+    local_rank, rank, world_size = init_distributed()
+
     parser = get_config()
     all_args = parse_args(args, parser)
 
+    if is_distributed():
+        all_args.n_rollout_threads = max(1, all_args.n_rollout_threads // world_size)
     all_args.episode_length = 32
-    all_args.n_rollout_threads = 4
     all_args.log_interval = 1
     validate_tppo_config(all_args)
-    print(all_args)
-        
-    run_dir = build_run_dir(all_args)
+    if rank == 0:
+        print(all_args)
+
+    if is_distributed():
+        if rank == 0:
+            run_dir = build_run_dir(all_args)
+        else:
+            run_dir = None
+        run_dir_list = [run_dir]
+        dist.broadcast_object_list(run_dir_list, src=0)
+        run_dir = run_dir_list[0]
+    else:
+        run_dir = build_run_dir(all_args)
 
     # seed
     random.seed(all_args.seed)
@@ -75,7 +89,8 @@ def main(args):
         "envs": envs,
         "eval_envs": eval_envs,
         "num_agents": envs.num_agents,
-        "run_dir": run_dir
+        "run_dir": run_dir,
+        "local_rank": local_rank,
     }
 
     runner = Runner(config)
@@ -85,8 +100,13 @@ def main(args):
     if envs is not None:
         envs.close()
 
-    runner.writter.export_scalars_to_json(str(runner.log_dir + '/summary.json'))
-    runner.writter.close()
+    if rank == 0:
+        runner.writter.export_scalars_to_json(str(runner.log_dir + '/summary.json'))
+        runner.writter.close()
+
+    if is_distributed():
+        import torch.distributed as dist
+        dist.destroy_process_group()
 
 
 if __name__ == "__main__":

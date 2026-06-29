@@ -60,7 +60,8 @@ class BabyAITextRunner(VirtualHomeRunner):
             if episode % self.log_interval == 0:
                 print("total_num_steps: ", total_num_steps)
                 #self.log_train(train_infos, total_num_steps)
-                wandb.log(train_infos, step=episode)
+                if self.rank == 0:
+                    wandb.log(train_infos, step=episode)
 
             if episode % self.save_json_interval == 0:
                 self._flush_games_json()

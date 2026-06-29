@@ -9,19 +9,14 @@ from mappo.utils.util import get_gard_norm, huber_loss, mse_loss
 from torch.distributions.categorical import Categorical
 from mappo.agents.llama_lora_code_agent import CodeLlamaLoRAgent
 from mappo.agents.llama_lora_agent import LlamaLoRAgent
+from mappo.utils.distributed import is_distributed
 
 class TPPOTrainer:
 
     def __init__(self, args, agent, num_agents):
-        if torch.cuda.is_available():
-            self.device = "cuda"
-        elif torch.backends.mps.is_available():
-            self.device = "mps"
-        else:
-            self.device = "cpu"
-
-        self.tpdv = dict(dtype=torch.float32, device=torch.device(f"{self.device}:0"))
         self.agent = agent
+        self.device = agent.device
+        self.tpdv = dict(dtype=torch.float32, device=torch.device(agent.device))
 
         self.clip_param = args.clip_param
         self.ppo_epoch = args.ppo_epoch
@@ -117,7 +112,10 @@ class TPPOTrainer:
         self.critic_optimizer.zero_grad()
         value_loss.backward()
         if self._use_max_grad_norm:
-            critic_grad_norm = nn.utils.clip_grad_norm_(self.agent.critic.parameters(), self.max_grad_norm)
+            if is_distributed() and hasattr(self.agent.critic, 'clip_grad_norm_'):
+                critic_grad_norm = self.agent.critic.clip_grad_norm_(self.max_grad_norm)
+            else:
+                critic_grad_norm = nn.utils.clip_grad_norm_(self.agent.critic.parameters(), self.max_grad_norm)
         else:
             critic_grad_norm = get_gard_norm(self.agent.critic.parameters())
         self.critic_optimizer.step()
@@ -166,7 +164,10 @@ class TPPOTrainer:
         #     self.policy_optimizer.zero_grad()
         #     return value_loss, critic_grad_norm, 0, 0
             
-        policy_grad_norm = nn.utils.clip_grad_norm_(self.agent.actor.parameters(), self.max_grad_norm)
+        if is_distributed() and hasattr(self.agent.actor, 'clip_grad_norm_'):
+            policy_grad_norm = self.agent.actor.clip_grad_norm_(self.max_grad_norm)
+        else:
+            policy_grad_norm = nn.utils.clip_grad_norm_(self.agent.actor.parameters(), self.max_grad_norm)
         self.policy_optimizer.step()
         policy_loss = policy_loss.item() * self.gradient_cp_steps
         self.policy_optimizer.zero_grad()
