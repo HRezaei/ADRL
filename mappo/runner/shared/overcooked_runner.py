@@ -53,7 +53,7 @@ class OvercookedRunner:
             sync_tensorboard=True,
             settings=wandb.Settings(_service_wait=300, code_dir="./mappo"),
             config=config_for_wandb,
-            name=f"{self.game_name}_{model_short}_{scale_tag}_{uuid.uuid4().hex[:8]}",
+            name=f"{self.all_args.experiment_name}_{self.game_name}_{model_short}_{scale_tag}_{uuid.uuid4().hex[:8]}",
         )
         self.writter = SummaryWriter(self.log_dir)
         self.save_dir = str(self.run_dir / 'models/')
@@ -70,6 +70,14 @@ class OvercookedRunner:
             self.gif_dir = str(self.run_dir / 'screenshots')
             os.makedirs(self.gif_dir, exist_ok=True)
         self.agent = LlamaLoRAgent(self.all_args.model_name, self.all_args.max_new_tokens, self.algo)
+        model = getattr(self.agent, 'actor', self.agent.base_model)
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        wandb.config.update({
+            "model/total_params": total_params,
+            "model/trainable_params": trainable_params,
+            "model/trainable_pct": 100.0 * trainable_params / total_params if total_params > 0 else 0,
+        })
         self.buffer = LanguageBuffer(self.all_args, self.num_agents, self.agent.tokenizer.pad_token_id)
         
         if self.algo == "TWOSOME":
