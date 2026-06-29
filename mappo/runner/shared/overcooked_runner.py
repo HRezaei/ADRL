@@ -46,12 +46,14 @@ class OvercookedRunner:
         config_for_wandb["all_args"] = vars(config_for_wandb["all_args"])
         config_for_wandb.pop("envs", None)
         config_for_wandb.pop("eval_envs", None)
+        model_short = os.path.basename(self.all_args.model_name) if self.all_args.model_name else "unknown"
+        scale_tag = "full" if getattr(self.all_args, "use_full_scale", 0) else "lora"
         wandb.init(
             project="adrl",
             sync_tensorboard=True,
             settings=wandb.Settings(_service_wait=300, code_dir="./mappo"),
             config=config_for_wandb,
-            name=f"{self.game_name}_{uuid.uuid4().hex[:8]}",
+            name=f"{self.game_name}_{model_short}_{scale_tag}_{uuid.uuid4().hex[:8]}",
         )
         self.writter = SummaryWriter(self.log_dir)
         self.save_dir = str(self.run_dir / 'models/')
