@@ -7,16 +7,12 @@ from torch.distributions import Categorical
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 from mappo.agents.llama_lora_agent import LlamaLoRAgent
+from mappo.utils.distributed import get_device
 
 
 class Seq2SeqLoRAgent(LlamaLoRAgent):
     def __init__(self, model_name, max_new_tokens, algo, load_path=None):
-        if torch.cuda.is_available():
-            self.device = "cuda"
-        elif torch.backends.mps.is_available():
-            self.device = "mps"
-        else:
-            self.device = "cpu"
+        self.device = get_device()
 
         self.algo = algo
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -26,7 +22,7 @@ class Seq2SeqLoRAgent(LlamaLoRAgent):
             self.tokenizer.pad_token_id = int(self.tokenizer.pad_token_id)
         self.tokenizer.padding_side = "right"
 
-        model_dtype = torch.float16 if self.device == "cuda" else torch.float32
+        model_dtype = torch.float16 if str(self.device).startswith("cuda") else torch.float32
         self.base_model = AutoModelForSeq2SeqLM.from_pretrained(
             model_name,
             torch_dtype=model_dtype,

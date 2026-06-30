@@ -11,6 +11,12 @@ from mappo.agents.llama_critic_agent import LlamaCritic
 from mappo.utils.case_study_buffer import CriticBuffer
 from mappo.trainers.critic_trainer_appo import CriticAPPOTrainer
 from mappo.trainers.critic_trainer_tppo import CriticTPPOTrainer
+from mappo.utils.distributed import (
+    NullSummaryWriter,
+    is_main_process,
+    reduce_train_info,
+    sync_module_parameters,
+)
 import pickle
 from mappo.envs.datascience.prompts.scikit_prompts import *
 import json
@@ -39,35 +45,41 @@ class CaseStudyRunner:
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
 
-        wandb.tensorboard.patch(root_logdir=self.log_dir)
+        if is_main_process():
+            wandb.tensorboard.patch(root_logdir=self.log_dir)
         config_for_wandb = config.copy()
         config_for_wandb["all_args"] = vars(config_for_wandb["all_args"])
         config_for_wandb.pop("envs", None)
         config_for_wandb.pop("eval_envs", None)
         model_short = os.path.basename(self.all_args.model_name) if self.all_args.model_name else "unknown"
         scale_tag = "full" if getattr(self.all_args, "use_full_scale", 0) else "lora"
-        wandb.init(
-            project="adrl",
-            sync_tensorboard=True,
-            settings=wandb.Settings(_service_wait=300, code_dir="./mappo"),
-            config=config_for_wandb,
-            name=f"{self.all_args.experiment_name}_{self.game_name}_{model_short}_{scale_tag}_{uuid.uuid4().hex[:8]}",
-        )
-        self.writter = SummaryWriter(self.log_dir)
+        if is_main_process():
+            wandb.init(
+                project="adrl",
+                sync_tensorboard=True,
+                settings=wandb.Settings(_service_wait=300, code_dir="./mappo"),
+                config=config_for_wandb,
+                name=f"{self.all_args.experiment_name}_{self.game_name}_{model_short}_{scale_tag}_{uuid.uuid4().hex[:8]}",
+            )
+            self.writter = SummaryWriter(self.log_dir)
+        else:
+            self.writter = NullSummaryWriter()
         self.save_dir = str(self.run_dir / 'models/')
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
 
         self.envs = config['envs']
         self.agent = LlamaCritic(self.all_args.model_name, self.all_args.max_new_tokens, self.algo)
+        sync_module_parameters(self.agent.critic)
         model = getattr(self.agent, 'actor', self.agent.base_model)
         total_params = sum(p.numel() for p in model.parameters())
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        wandb.config.update({
-            "model/total_params": total_params,
-            "model/trainable_params": trainable_params,
-            "model/trainable_pct": 100.0 * trainable_params / total_params if total_params > 0 else 0,
-        })
+        if is_main_process():
+            wandb.config.update({
+                "model/total_params": total_params,
+                "model/trainable_params": trainable_params,
+                "model/trainable_pct": 100.0 * trainable_params / total_params if total_params > 0 else 0,
+            })
         self.buffer = CriticBuffer(self.all_args, self.num_agents, self.agent.tokenizer.pad_token_id)
         
 
@@ -100,7 +112,7 @@ class CaseStudyRunner:
                 obs, rewards, dones, ava, infos = self.envs.step(actions)
                 
                 for i in range(self.n_rollout_threads):
-                    if "episode" in infos[i].keys():
+                    if is_main_process() and "episode" in infos[i].keys():
                         global_step = total_num_steps + step * self.n_rollout_threads + i
                         print(f"global_step={global_step}, episodic_return={infos[i]['episode']['r']}, episodic_length={infos[i]['episode']['l']}")
                         self.writter.add_scalar("charts/episodic_return", infos[i]["episode"]["r"], global_step)
@@ -121,10 +133,11 @@ class CaseStudyRunner:
                 train_infos = {"value_loss": 0.0, "value_grad_norm": 0.0, "policy_loss": 0.0, "policy_grad_norm": 0.0}
             else:
                 train_infos = self.trainer.train(self.buffer)      
+            train_infos = reduce_train_info(train_infos)
             self.buffer.after_update()
 
             # log information
-            if episode % self.log_interval == 0:
+            if is_main_process() and episode % self.log_interval == 0:
                 print("total_num_steps: ", total_num_steps)
                 self.log_train(train_infos, total_num_steps)
         
@@ -181,5 +194,4 @@ class CaseStudyRunner:
     def save(self, episode):
         """Save policy's actor and critic networks."""
         self.agent.save(self.save_dir, episode)
-
 

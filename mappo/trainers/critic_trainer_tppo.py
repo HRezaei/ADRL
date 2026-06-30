@@ -5,11 +5,13 @@ import torch.nn.functional as F
 from mappo.utils.util import get_gard_norm, huber_loss, mse_loss
 from torch.distributions.categorical import Categorical
 from mappo.envs.case_study.case_study_env import STATES, AVAILABLE_ACTIONS
+from mappo.utils.distributed import average_gradients, get_device
 
 class CriticTPPOTrainer:
 
     def __init__(self, args, agent, num_agents):
-        self.tpdv = dict(dtype=torch.float32, device=torch.device("cuda:0"))
+        self.device = get_device(args)
+        self.tpdv = dict(dtype=torch.float32, device=torch.device(self.device))
         self.agent = agent
 
         self.clip_param = args.clip_param
@@ -125,9 +127,9 @@ class CriticTPPOTrainer:
             else:
                 raise ValueError("Invalid state")
 
-        value_preds_batch = torch.from_numpy(value_preds_batch).to("cuda")
-        return_batch = torch.from_numpy(return_batch).to("cuda")
-        action_tokens_batch = torch.from_numpy(action_tokens_batch).to("cuda")
+        value_preds_batch = torch.from_numpy(value_preds_batch).to(self.device)
+        return_batch = torch.from_numpy(return_batch).to(self.device)
+        action_tokens_batch = torch.from_numpy(action_tokens_batch).to(self.device)
         token_mask = self.cal_token_mask(action_tokens_batch)
         batch_size = obs_batch.shape[0]
         
@@ -139,6 +141,7 @@ class CriticTPPOTrainer:
         
         self.critic_optimizer.zero_grad()
         value_loss.backward()
+        average_gradients(self.agent.critic.parameters())
         if self._use_max_grad_norm:
             critic_grad_norm = nn.utils.clip_grad_norm_(self.agent.critic.parameters(), self.max_grad_norm)
         else:

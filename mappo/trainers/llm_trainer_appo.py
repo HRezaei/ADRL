@@ -3,11 +3,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mappo.utils.util import get_gard_norm, huber_loss, mse_loss
+from mappo.utils.distributed import average_gradients, get_device
 
 class APPOTrainer:
 
     def __init__(self, args, agent, num_agents):
-        self.tpdv = dict(dtype=torch.float32, device=torch.device("cuda:0"))
+        self.device = get_device(args)
+        self.tpdv = dict(dtype=torch.float32, device=torch.device(self.device))
         self.agent = agent
 
         self.clip_param = args.clip_param
@@ -61,11 +63,11 @@ class APPOTrainer:
         obs_batch, ava_batch, action_batch, log_prob_batch, \
             value_preds_batch, return_batch, advantages_batch, action_tokens_batch = sample
 
-        log_prob_batch = torch.from_numpy(log_prob_batch).to("cuda")
-        value_preds_batch = torch.from_numpy(value_preds_batch).to("cuda")
-        return_batch = torch.from_numpy(return_batch).to("cuda")
-        advantages_batch = torch.from_numpy(advantages_batch).to("cuda")
-        action_tokens_batch = torch.from_numpy(action_tokens_batch).to("cuda")
+        log_prob_batch = torch.from_numpy(log_prob_batch).to(self.device)
+        value_preds_batch = torch.from_numpy(value_preds_batch).to(self.device)
+        return_batch = torch.from_numpy(return_batch).to(self.device)
+        advantages_batch = torch.from_numpy(advantages_batch).to(self.device)
+        action_tokens_batch = torch.from_numpy(action_tokens_batch).to(self.device)
         batch_size = obs_batch.shape[0]
         
         # critic update
@@ -77,6 +79,7 @@ class APPOTrainer:
         
         self.critic_optimizer.zero_grad()
         value_loss.backward()
+        average_gradients(self.agent.critic.parameters())
         if self._use_max_grad_norm:
             critic_grad_norm = nn.utils.clip_grad_norm_(self.agent.critic.parameters(), self.max_grad_norm)
         else:
@@ -114,6 +117,7 @@ class APPOTrainer:
             self.policy_optimizer.zero_grad()
             return value_loss, critic_grad_norm, 0, 0
             
+        average_gradients(self.agent.actor.parameters())
         policy_grad_norm = nn.utils.clip_grad_norm_(self.agent.actor.parameters(), self.max_grad_norm)
         self.policy_optimizer.step()
         policy_loss = policy_loss.item()

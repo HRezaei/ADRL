@@ -13,6 +13,12 @@ sys.path.append("../../")
 from mappo.config import get_config, validate_tppo_config
 from mappo.envs.babyai_text.babyai_text_env import BabyAITextEnv
 from mappo.runner.shared.babyai_text_runner import BabyAITextRunner as Runner
+from mappo.utils.distributed import (
+    broadcast_run_dir,
+    cleanup_distributed,
+    init_distributed_mode,
+    is_main_process,
+)
 
 
 def parse_args(args, parser):
@@ -55,23 +61,27 @@ def main(args):
     parser = get_config()
     all_args = parse_args(args, parser)
     validate_tppo_config(all_args)
+    init_distributed_mode(all_args)
 
-    run_dir = build_run_dir(all_args)
+    run_dir = build_run_dir(all_args) if is_main_process() else None
+    run_dir = broadcast_run_dir(run_dir)
 
-    random.seed(all_args.seed)
-    np.random.seed(all_args.seed)
-    torch.manual_seed(all_args.seed)
-    torch.cuda.manual_seed_all(all_args.seed)
+    rank_seed = all_args.seed + getattr(all_args, "rank", 0) * 10000
+    random.seed(rank_seed)
+    np.random.seed(rank_seed)
+    torch.manual_seed(rank_seed)
+    torch.cuda.manual_seed_all(rank_seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+    env_seed = all_args.seed + getattr(all_args, "rank", 0) * all_args.n_rollout_threads
     envs = BabyAITextEnv(
-        all_args.env_name, all_args.n_rollout_threads, all_args.seed, num_past_obs=all_args.num_past_obs,
+        all_args.env_name, all_args.n_rollout_threads, env_seed, num_past_obs=all_args.num_past_obs,
         save_gifs=all_args.save_gifs,
         run_dir=run_dir
     )
     eval_envs = BabyAITextEnv(
-        all_args.env_name, all_args.n_eval_rollout_threads, all_args.seed * 5
+        all_args.env_name, all_args.n_eval_rollout_threads, all_args.seed * 5 + getattr(all_args, "rank", 0)
     )
 
     config = {
@@ -82,14 +92,17 @@ def main(args):
         "run_dir": run_dir,
     }
 
-    runner = Runner(config)
-    runner.run()
-
-    if envs is not None:
-        envs.close()
-
-    runner.writter.export_scalars_to_json(str(runner.log_dir + "/summary.json"))
-    runner.writter.close()
+    runner = None
+    try:
+        runner = Runner(config)
+        runner.run()
+    finally:
+        if envs is not None:
+            envs.close()
+        if runner is not None:
+            runner.writter.export_scalars_to_json(str(runner.log_dir + "/summary.json"))
+            runner.writter.close()
+        cleanup_distributed()
 
 
 if __name__ == "__main__":

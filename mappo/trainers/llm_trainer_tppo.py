@@ -9,18 +9,14 @@ from mappo.utils.util import get_gard_norm, huber_loss, mse_loss
 from torch.distributions.categorical import Categorical
 from mappo.agents.llama_lora_code_agent import CodeLlamaLoRAgent
 from mappo.agents.llama_lora_agent import LlamaLoRAgent
+from mappo.utils.distributed import average_gradients, get_device
 
 class TPPOTrainer:
 
     def __init__(self, args, agent, num_agents):
-        if torch.cuda.is_available():
-            self.device = "cuda"
-        elif torch.backends.mps.is_available():
-            self.device = "mps"
-        else:
-            self.device = "cpu"
+        self.device = get_device(args)
 
-        self.tpdv = dict(dtype=torch.float32, device=torch.device(f"{self.device}:0"))
+        self.tpdv = dict(dtype=torch.float32, device=torch.device(self.device))
         self.agent = agent
 
         self.clip_param = args.clip_param
@@ -116,6 +112,7 @@ class TPPOTrainer:
         
         self.critic_optimizer.zero_grad()
         value_loss.backward()
+        average_gradients(self.agent.critic.parameters())
         if self._use_max_grad_norm:
             critic_grad_norm = nn.utils.clip_grad_norm_(self.agent.critic.parameters(), self.max_grad_norm)
         else:
@@ -166,6 +163,7 @@ class TPPOTrainer:
         #     self.policy_optimizer.zero_grad()
         #     return value_loss, critic_grad_norm, 0, 0
             
+        average_gradients(self.agent.actor.parameters())
         policy_grad_norm = nn.utils.clip_grad_norm_(self.agent.actor.parameters(), self.max_grad_norm)
         self.policy_optimizer.step()
         policy_loss = policy_loss.item() * self.gradient_cp_steps

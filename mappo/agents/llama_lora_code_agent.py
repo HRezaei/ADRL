@@ -23,12 +23,13 @@ import os
 from peft import PeftModel
 from mappo.models.critic import TPPOCritic
 from mappo.envs.datascience.prompts.scikit_prompts import *
+from mappo.utils.distributed import get_device
 
 
 class CodeLlamaLoRAgent:
 
     def __init__(self, model_name, max_new_tokens, algo, load_path=None):
-        self.device = "cuda"
+        self.device = get_device()
         self.algo = algo
         # self.tokenizer = LlamaTokenizer.from_pretrained(model_name, padding_side='left')
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False, padding_side='left')
@@ -38,7 +39,7 @@ class CodeLlamaLoRAgent:
         
         self.base_model = AutoModelForCausalLM.from_pretrained(model_name, 
                                                            torch_dtype=torch.float16,
-                                                           device_map="auto")
+                                                           device_map="auto" if self.device == "cuda" else None)
         self.base_model.half().to(self.device)
         
         # self.device = next(self.generator.parameters()).device
@@ -99,8 +100,8 @@ class CodeLlamaLoRAgent:
         """
         prompts = obs.tolist()
         token_seq = self.tokenizer(prompts, return_tensors="pt", padding=True)
-        input_ids = token_seq["input_ids"].to("cuda")
-        attn_mask = token_seq["attention_mask"].to("cuda")
+        input_ids = token_seq["input_ids"].to(self.device)
+        attn_mask = token_seq["attention_mask"].to(self.device)
         if not greedy:
             output = self.actor.generate(
                 input_ids,
@@ -127,7 +128,7 @@ class CodeLlamaLoRAgent:
         
         actions = []
         action_tokens = torch.ones((sequences.shape[0], self.max_new_tokens), 
-                                   dtype=torch.int64).to("cuda") * self.tokenizer.pad_token_id
+                                   dtype=torch.int64).to(self.device) * self.tokenizer.pad_token_id
         for i in range(sequences.shape[0]):
             action_token = sequences[i][input_ids[i].shape[0]:]
             action_tokens[i, :action_token.shape[0]] = action_token
@@ -138,7 +139,7 @@ class CodeLlamaLoRAgent:
         return actions, action_tokens
     
     def get_slice(self, logits, obs_full_lengths, act_real_lengths):            
-        action_slice = torch.zeros((logits.shape[0], self.max_new_tokens, logits.shape[-1])).to("cuda")
+        action_slice = torch.zeros((logits.shape[0], self.max_new_tokens, logits.shape[-1])).to(self.device)
         for i in range(logits.shape[0]):
             start_idx = obs_full_lengths - 1
             end_idx = obs_full_lengths + act_real_lengths[i] - 1
@@ -147,8 +148,8 @@ class CodeLlamaLoRAgent:
     
     def get_token_values(self, obs, action_tokens):        
         obs_token_seq = self.tokenizer(obs.tolist(), return_tensors="pt", padding=True)
-        obs_input_ids = obs_token_seq["input_ids"].to("cuda")
-        obs_attn_mask = obs_token_seq["attention_mask"].to("cuda")
+        obs_input_ids = obs_token_seq["input_ids"].to(self.device)
+        obs_attn_mask = obs_token_seq["attention_mask"].to(self.device)
         obs_full_lengths = obs_input_ids.shape[1]
         
         act_attn_mask = (action_tokens != 0)
@@ -164,8 +165,8 @@ class CodeLlamaLoRAgent:
     
     def get_token_logits(self, obs, action_tokens):
         obs_token_seq = self.tokenizer(obs.tolist(), return_tensors="pt", padding=True)
-        obs_input_ids = obs_token_seq["input_ids"].to("cuda")
-        obs_attn_mask = obs_token_seq["attention_mask"].to("cuda")
+        obs_input_ids = obs_token_seq["input_ids"].to(self.device)
+        obs_attn_mask = obs_token_seq["attention_mask"].to(self.device)
         obs_full_lengths = obs_input_ids.shape[1]
         
         act_attn_mask = (action_tokens != 0)
@@ -225,8 +226,8 @@ class CodeLlamaLoRAgent:
     
     def get_next_tppo_values(self, obs): 
         token_seq = self.tokenizer(obs.tolist(), return_tensors="pt", padding=True)
-        input_ids = token_seq["input_ids"].to("cuda")
-        attn_mask = token_seq["attention_mask"].to("cuda")
+        input_ids = token_seq["input_ids"].to(self.device)
+        attn_mask = token_seq["attention_mask"].to(self.device)
         
         # values
         with self.actor.disable_adapter():
@@ -270,4 +271,3 @@ class CodeLlamaLoRAgent:
     def eval(self):
         self.generator.eval()
         self.critic.eval()
-

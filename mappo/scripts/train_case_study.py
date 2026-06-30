@@ -11,6 +11,12 @@ sys.path.append("../../")
 from mappo.config import get_config, validate_tppo_config
 from mappo.envs.case_study.case_study_env import CaseStudyEnv
 from mappo.runner.shared.case_study_runner import CaseStudyRunner as Runner
+from mappo.utils.distributed import (
+    broadcast_run_dir,
+    cleanup_distributed,
+    init_distributed_mode,
+    is_main_process,
+)
 
 
 def parse_args(args, parser):
@@ -49,14 +55,17 @@ def main(args):
     all_args.log_interval = 1
     all_args.critic_lr = 5e-5
     validate_tppo_config(all_args)
+    init_distributed_mode(all_args)
         
-    run_dir = build_run_dir(all_args)
+    run_dir = build_run_dir(all_args) if is_main_process() else None
+    run_dir = broadcast_run_dir(run_dir)
 
     # seed
-    random.seed(all_args.seed)
-    np.random.seed(all_args.seed)
-    torch.manual_seed(all_args.seed)
-    torch.cuda.manual_seed_all(all_args.seed)  # If you're using CUDA
+    rank_seed = all_args.seed + getattr(all_args, "rank", 0) * 10000
+    random.seed(rank_seed)
+    np.random.seed(rank_seed)
+    torch.manual_seed(rank_seed)
+    torch.cuda.manual_seed_all(rank_seed)  # If you're using CUDA
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
@@ -69,15 +78,17 @@ def main(args):
         "run_dir": run_dir
     }
 
-    runner = Runner(config)
-    runner.run()
-
-    # post process
-    if envs is not None:
-        envs.close()
-
-    runner.writter.export_scalars_to_json(str(runner.log_dir + '/summary.json'))
-    runner.writter.close()
+    runner = None
+    try:
+        runner = Runner(config)
+        runner.run()
+    finally:
+        if envs is not None:
+            envs.close()
+        if runner is not None:
+            runner.writter.export_scalars_to_json(str(runner.log_dir + '/summary.json'))
+            runner.writter.close()
+        cleanup_distributed()
 
 
 if __name__ == "__main__":

@@ -165,6 +165,12 @@ def get_config():
     parser.add_argument("--cuda", action='store_false', default=True, help="by default True, will use GPU to train; or else will use CPU;")
     parser.add_argument("--cuda_deterministic",
                         action='store_false', default=True, help="by default, make sure random seed effective. if set, bypass such function.")
+    parser.add_argument("--distributed", action="store_true", default=False,
+                        help="Enable multi-GPU training. Also enabled automatically under torchrun.")
+    parser.add_argument("--local_rank", type=int, default=0,
+                        help="Local process rank set by torchrun.")
+    parser.add_argument("--dist_backend", type=str, default="nccl",
+                        choices=["nccl", "gloo"], help="torch.distributed backend.")
     parser.add_argument("--n_training_threads", type=int,
                         default=16, help="Number of torch threads for training")
     parser.add_argument("--n_rollout_threads", type=int, default=32,

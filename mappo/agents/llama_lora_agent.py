@@ -21,17 +21,13 @@ from peft import (
 import os
 from peft import PeftModel
 from mappo.models.critic import APPOCritic, ETPOCritic, TPPOCritic
+from mappo.utils.distributed import get_device
 
 
 class LlamaLoRAgent:
 
     def __init__(self, model_name, max_new_tokens, algo, load_path=None):
-        if torch.cuda.is_available():
-            self.device = "cuda"
-        elif torch.backends.mps.is_available():
-            self.device = "mps"
-        else:
-            self.device = "cpu"
+        self.device = get_device()
         self.algo = algo
         self.tokenizer = LlamaTokenizer.from_pretrained(model_name)
         self.tokenizer.pad_token_id = (
@@ -40,7 +36,7 @@ class LlamaLoRAgent:
         
         self.base_model = LlamaForCausalLM.from_pretrained(model_name, 
                                                            torch_dtype=torch.float16,
-                                                           device_map="auto")
+                                                           device_map="auto" if self.device == "cuda" else None)
         self.base_model.half().to(self.device)
         
         self.max_new_tokens = max_new_tokens
@@ -76,7 +72,7 @@ class LlamaLoRAgent:
             print("init with weights")
             model = LlamaForCausalLM.from_pretrained(lora_weights, 
                                                      torch_dtype=torch.float16,
-                                                     device_map="auto")
+                                                     device_map="auto" if self.device == "cuda" else None)
 
         # if torch.__version__ >= "2" and sys.platform != "win32":
         #     model = torch.compile(model)

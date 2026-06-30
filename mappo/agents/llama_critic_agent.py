@@ -21,12 +21,13 @@ from peft import (
 import os
 from peft import PeftModel
 from mappo.models.critic import APPOCritic, ETPOCritic, TPPOCritic
+from mappo.utils.distributed import get_device
 
 
 class LlamaCritic:
 
     def __init__(self, model_name, max_new_tokens, algo, load_path=None):
-        self.device = "cuda"
+        self.device = get_device()
         self.algo = algo
         self.tokenizer = LlamaTokenizer.from_pretrained(model_name)
         self.tokenizer.pad_token_id = (
@@ -35,7 +36,7 @@ class LlamaCritic:
         
         self.base_model = LlamaForCausalLM.from_pretrained(model_name, 
                                                            torch_dtype=torch.float16,
-                                                           device_map="auto")
+                                                           device_map={"": self.device} if str(self.device).startswith("cuda:") else "auto")
         self.base_model.half().to(self.device)
         
         self.max_new_tokens = max_new_tokens
@@ -70,7 +71,7 @@ class LlamaCritic:
         
         actions = []
         action_tokens = torch.ones((len(action_num_list), self.max_new_tokens), 
-                                   dtype=torch.int64).to("cuda") * self.tokenizer.pad_token_id
+                                   dtype=torch.int64).to(self.device) * self.tokenizer.pad_token_id
 
         for i in range(len(action_num_list)):
             start = sum(action_num_list[:i])
@@ -104,8 +105,8 @@ class LlamaCritic:
             action_sequences += [a for a in ac]  # for llama
         
         token_seq = self.tokenizer(sequences, return_tensors="pt", padding=True)
-        input_ids = token_seq["input_ids"].to("cuda")
-        attn_mask = token_seq["attention_mask"].to("cuda")
+        input_ids = token_seq["input_ids"].to(self.device)
+        attn_mask = token_seq["attention_mask"].to(self.device)
         seq_token_lengths = attn_mask.sum(dim=1)
         
         # outputs = self.actor(input_ids=input_ids, attention_mask=attn_mask, return_dict=True)
@@ -113,7 +114,7 @@ class LlamaCritic:
         # input_ids = input_ids[: , 1:]  # align logits and ids
         
         act_token_seq = self.tokenizer(action_sequences, return_tensors="pt", padding=True)
-        act_attn_mask = act_token_seq["attention_mask"].to("cuda")
+        act_attn_mask = act_token_seq["attention_mask"].to(self.device)
         act_token_lengths = act_attn_mask.sum(dim=1) - 1  # ignore the <bos> token
             
         actions, action_tokens = self.sample_actions(input_ids, seq_token_lengths, 
@@ -133,7 +134,7 @@ class LlamaCritic:
         return values
     
     def get_slice(self, logits, seq_token_lengths, act_token_lengths):
-        action_slice = torch.zeros((logits.shape[0], self.max_new_tokens, logits.shape[-1])).to("cuda")
+        action_slice = torch.zeros((logits.shape[0], self.max_new_tokens, logits.shape[-1])).to(self.device)
         for i in range(logits.shape[0]):
             start_idx = seq_token_lengths[i] - act_token_lengths[i] - 1
             end_idx = seq_token_lengths[i] - 1
@@ -144,12 +145,12 @@ class LlamaCritic:
         obs_act = [obs[i] + " " + actions[i] for i in range(len(obs))]
         
         token_seq = self.tokenizer(obs_act, return_tensors="pt", padding=True)
-        input_ids = token_seq["input_ids"].to("cuda")
-        attn_mask = token_seq["attention_mask"].to("cuda")
+        input_ids = token_seq["input_ids"].to(self.device)
+        attn_mask = token_seq["attention_mask"].to(self.device)
         seq_token_lengths = attn_mask.sum(dim=1)
         
         act_token_seq = self.tokenizer(actions.tolist(), return_tensors="pt", padding=True)
-        act_attn_mask = act_token_seq["attention_mask"].to("cuda")
+        act_attn_mask = act_token_seq["attention_mask"].to(self.device)
         act_token_lengths = act_attn_mask.sum(dim=1) - 1  # ignore the <bos> token
         
         values = self.critic(input_ids, attention_mask=attn_mask)
@@ -175,8 +176,8 @@ class LlamaCritic:
     
     def get_next_tppo_values(self, obs): 
         token_seq = self.tokenizer(obs.tolist(), return_tensors="pt", padding=True)
-        input_ids = token_seq["input_ids"].to("cuda")
-        attn_mask = token_seq["attention_mask"].to("cuda")
+        input_ids = token_seq["input_ids"].to(self.device)
+        attn_mask = token_seq["attention_mask"].to(self.device)
         token_idx = attn_mask.sum(dim=1) - 1
         
         # values
@@ -205,5 +206,4 @@ class LlamaCritic:
 
     def load(self, save_dir):
         print("load model on path: ", save_dir)
-
 

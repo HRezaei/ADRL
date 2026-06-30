@@ -12,6 +12,12 @@ from mappo.config import get_config, validate_tppo_config
 from mappo.envs.datascience.scikit_env import ScikitEnv
 from mappo.envs.datascience.datasci_env_wrappers import ShareSubprocVecEnv, ShareDummyVecEnv
 from mappo.runner.shared.datascience_runner import DataScienceRunner as Runner
+from mappo.utils.distributed import (
+    broadcast_run_dir,
+    cleanup_distributed,
+    init_distributed_mode,
+    is_main_process,
+)
 
 def make_train_env(all_args):
     def get_env_fn(rank):
@@ -80,14 +86,19 @@ def main(args):
     all_args.lr = 1e-6
     all_args.split = False
     validate_tppo_config(all_args)
-    print("algorithm: {}, dataset_name: {}".format(all_args.algorithm_name, all_args.dataset_name))
+    init_distributed_mode(all_args)
+    if is_main_process():
+        print("algorithm: {}, dataset_name: {}".format(all_args.algorithm_name, all_args.dataset_name))
         
-    run_dir = build_run_dir(all_args)
+    run_dir = build_run_dir(all_args) if is_main_process() else None
+    run_dir = broadcast_run_dir(run_dir)
 
     # seed
-    torch.manual_seed(all_args.seed)
-    torch.cuda.manual_seed_all(all_args.seed)
-    np.random.seed(all_args.seed)
+    rank_seed = all_args.seed + getattr(all_args, "rank", 0) * 10000
+    torch.manual_seed(rank_seed)
+    torch.cuda.manual_seed_all(rank_seed)
+    np.random.seed(rank_seed)
+    all_args.seed = all_args.seed + getattr(all_args, "rank", 0) * all_args.n_rollout_threads
 
     envs = make_train_env(all_args)
     eval_envs = make_eval_env(all_args)
@@ -100,16 +111,18 @@ def main(args):
         "run_dir": run_dir
     }
 
-    runner = Runner(config)
-    runner.run()
-    # runner.eval(0)
-
-    # post process
-    if envs is not None:
-        envs.close()
-
-    runner.writter.export_scalars_to_json(str(runner.log_dir + '/summary.json'))
-    runner.writter.close()
+    runner = None
+    try:
+        runner = Runner(config)
+        runner.run()
+        # runner.eval(0)
+    finally:
+        if envs is not None:
+            envs.close()
+        if runner is not None:
+            runner.writter.export_scalars_to_json(str(runner.log_dir + '/summary.json'))
+            runner.writter.close()
+        cleanup_distributed()
 
 
 if __name__ == "__main__":
