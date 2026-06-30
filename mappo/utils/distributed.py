@@ -46,6 +46,13 @@ def fsdp_wrap(model, device_id, sharding_strategy=ShardingStrategy.FULL_SHARD, *
         buffer_dtype=torch.float16,
     )
     model = model.to(f"cuda:{device_id}")
+    # FSDP flattens all parameters per unit into a single flat buffer,
+    # which requires uniform dtype.  Models often contain a mix of
+    # float16 and float32 (e.g. T5's LayerNorm params).  Cast to the
+    # MixedPrecision param_dtype so flattening succeeds.
+    param_dtypes = {p.dtype for p in model.parameters()}
+    if len(param_dtypes) > 1:
+        model = model.to(dtype=mixed_precision.param_dtype)
     return FSDP(
         model,
         sharding_strategy=sharding_strategy,

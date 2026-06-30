@@ -161,9 +161,9 @@ class APPOTrainer:
         return train_info
 
     def prep_training(self):
-        self.agent.actor().train()
-        self.agent.critic().train()
+        self.agent.actor.train()
+        self.agent.critic.train()
 
     def prep_rollout(self):
-        self.agent.actor().eval()
-        self.agent.critic().eval()
+        self.agent.actor.eval()
+        self.agent.critic.eval()

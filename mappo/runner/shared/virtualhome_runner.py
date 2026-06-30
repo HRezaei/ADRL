@@ -97,6 +97,17 @@ class VirtualHomeRunner:
                     self.agent.actor.lm_head.weight = torch.nn.Parameter(
                         self.agent.actor.lm_head.weight.clone()
                     )
+                # T5: shared.weight is also tied to encoder.embed_tokens & decoder.embed_tokens
+                if hasattr(self.agent.actor, 'encoder') and hasattr(self.agent.actor.encoder, 'embed_tokens'):
+                    if self.agent.actor.encoder.embed_tokens.weight is self.agent.actor.shared.weight:
+                        self.agent.actor.encoder.embed_tokens.weight = torch.nn.Parameter(
+                            self.agent.actor.encoder.embed_tokens.weight.clone()
+                        )
+                if hasattr(self.agent.actor, 'decoder') and hasattr(self.agent.actor.decoder, 'embed_tokens'):
+                    if self.agent.actor.decoder.embed_tokens.weight is self.agent.actor.shared.weight:
+                        self.agent.actor.decoder.embed_tokens.weight = torch.nn.Parameter(
+                            self.agent.actor.decoder.embed_tokens.weight.clone()
+                        )
             self.agent.actor = fsdp_wrap(self.agent.actor, device_id=self.local_rank)
             self.agent.critic = self.agent.critic.to(self.agent.device)
         else:
