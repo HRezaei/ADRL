@@ -32,7 +32,7 @@ class Seq2SeqFullAgent(LlamaFullAgent):
         model_dtype = torch.float16 if self.device.startswith("cuda") else torch.float32
         self.base_model = AutoModelForSeq2SeqLM.from_pretrained(
             model_name,
-            torch_dtype=model_dtype,
+            dtype=model_dtype,
         )
         self.base_model.to("cpu")
 
