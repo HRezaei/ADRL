@@ -18,7 +18,7 @@ from mappo.agents.seq2seq_lora_agent import Seq2SeqLoRAgent
 from mappo.utils.language_buffer import LanguageBuffer
 from mappo.trainers.llm_trainer_appo import APPOTrainer
 from mappo.trainers.llm_trainer_tppo import TPPOTrainer
-from mappo.utils.distributed import is_distributed, get_local_rank, fsdp_wrap, is_main_process
+from mappo.utils.distributed import is_distributed, get_local_rank, fsdp_wrap, is_main_process, reduce_train_info
 from torch.distributed.checkpoint.state_dict import get_state_dict as fsdp_get_state_dict
 import torch.distributed as dist
 from torch.distributed.fsdp import ShardingStrategy
@@ -187,7 +187,8 @@ class VirtualHomeRunner:
             if self.all_args.skip_updating_model:
                 train_infos = {"value_loss": 0.0, "value_grad_norm": 0.0, "policy_loss": 0.0, "policy_grad_norm": 0.0}
             else:
-                train_infos = self.trainer.train(self.buffer)      
+                train_infos = self.trainer.train(self.buffer)
+            train_infos = reduce_train_info(train_infos)
             self.buffer.after_update()
 
             success_per_episode =  [1 if r > 0 else 0 for r in finished_rewards]

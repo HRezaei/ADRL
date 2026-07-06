@@ -1,5 +1,6 @@
 import os
 
+import numpy as np
 import torch
 import torch.distributed as dist
 from torch.distributed.checkpoint.state_dict import get_state_dict
@@ -68,6 +69,18 @@ def fsdp_wrap(model, device_id, sharding_strategy=ShardingStrategy.NO_SHARD, **k
         backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
         **kwargs,
     )
+
+
+def reduce_train_info(info):
+    """All-reduce (sum) all scalar values in a dict across GPUs."""
+    if not is_distributed():
+        return info
+    for k, v in info.items():
+        if isinstance(v, (int, float, np.integer, np.floating)):
+            t = torch.tensor([v], dtype=torch.float64, device="cuda")
+            dist.all_reduce(t, op=dist.ReduceOp.SUM)
+            info[k] = type(v)(t.item())
+    return info
 
 
 def save_fsdp_model(model, path):

@@ -9,7 +9,7 @@ import wandb
 from tensorboardX import SummaryWriter
 from mappo.models.codellama import Llama
 from mappo.agents.llama_lora_agent import LlamaLoRAgent
-from mappo.utils.distributed import is_main_process
+from mappo.utils.distributed import is_main_process, reduce_train_info
 from mappo.utils.language_buffer import LanguageBuffer
 from mappo.trainers.llm_trainer_appo import APPOTrainer
 from mappo.trainers.llm_trainer_tppo import TPPOTrainer
@@ -219,13 +219,32 @@ class OvercookedRunner:
                 train_infos = {"value_loss": 0.0, "value_grad_norm": 0.0, "policy_loss": 0.0, "policy_grad_norm": 0.0}
             else:
                 train_infos = self.trainer.train(self.buffer)
+
+            # Store raw counts for cross-GPU reduction
             success_per_episode = [1 if r > 0 else 0 for r in finished_returns] if finished_returns else [0]
-            train_infos["success_rate"] = sum(success_per_episode) / len(success_per_episode)
+            train_infos["_success_count"] = sum(success_per_episode)
+            train_infos["_total_episodes"] = len(success_per_episode)
 
             if plan_len is not None and finished_lengths:
                 waste = [l - plan_len for l in finished_lengths]
-                train_infos["waste_frames"] = sum(waste) / len(waste)
-                train_infos["waste_frames_percentage"] = sum(waste) / sum(finished_lengths)
+                train_infos["_waste_sum"] = sum(waste)
+                train_infos["_waste_count"] = len(waste)
+                train_infos["_finished_sum"] = sum(finished_lengths)
+
+            train_infos = reduce_train_info(train_infos)
+
+            # Recompute rates from reduced counts
+            total_ep = train_infos.pop("_total_episodes", 0)
+            sc = train_infos.pop("_success_count", 0)
+            train_infos["success_rate"] = sc / total_ep if total_ep > 0 else 0
+
+            if "_waste_sum" in train_infos:
+                ws = train_infos.pop("_waste_sum")
+                wc = train_infos.pop("_waste_count")
+                fs = train_infos.pop("_finished_sum")
+                train_infos["waste_frames"] = ws / wc if wc > 0 else 0
+                train_infos["waste_frames_percentage"] = ws / fs if fs > 0 else 0
+
             self.buffer.after_update()
 
             # save model

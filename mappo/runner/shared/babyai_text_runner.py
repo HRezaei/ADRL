@@ -7,6 +7,7 @@ import wandb
 from tqdm import tqdm
 
 from mappo.runner.shared.virtualhome_runner import VirtualHomeRunner
+from mappo.utils.distributed import reduce_train_info
 
 
 class BabyAITextRunner(VirtualHomeRunner):
@@ -37,14 +38,39 @@ class BabyAITextRunner(VirtualHomeRunner):
 
             update_start_time = time.time()
             collect_logs = self.collect_experiences(episode)
+            collect_logs = reduce_train_info(collect_logs)
+
+            # Recompute rates from reduced counts
+            total_ep = collect_logs.pop("total_episodes", 0)
+            sc = collect_logs.pop("success_count", 0)
+            collect_logs["success_rate"] = sc / total_ep if total_ep > 0 else 0
+
+            cwf = collect_logs.pop("count_waste_frames", 0)
+            twf = collect_logs.get("total_waste_frames", 0)
+            collect_logs["mean_waste_frames"] = twf / cwf if cwf > 0 else float('nan')
+            collect_logs["waste_frames"] = collect_logs.pop("total_waste_frames", 0)
+
+            cfw = collect_logs.pop("count_frames_to_win", 0)
+            tfw = collect_logs.get("total_frames_to_win", 0)
+            collect_logs["mean_frames_to_win"] = tfw / cfw if cfw > 0 else float('nan')
+            collect_logs["frames_to_win"] = collect_logs.pop("total_frames_to_win", 0)
+
+            cwftw = collect_logs.pop("count_waste_frames_to_win", 0)
+            twftw = collect_logs.get("total_waste_frames_to_win", 0)
+            collect_logs["mean_waste_frames_to_win"] = twftw / cwftw if cwftw > 0 else float('nan')
+            collect_logs["waste_frames_to_win"] = collect_logs.pop("total_waste_frames_to_win", 0)
+
+            sum_comp = collect_logs["completed_frames"]
+            collect_logs["waste_frames_percentage"] = collect_logs["waste_frames"] / sum_comp if sum_comp > 0 else float('nan')
+            collect_logs["waste_frames_to_win_percentage"] = collect_logs["waste_frames_to_win"] / collect_logs["frames_to_win"] if collect_logs["frames_to_win"] > 0 else float('nan')
 
             # compute return and update network
             self.before_update()
-            # self.trainer.prep_training()
             if self.all_args.skip_updating_model:
                 train_infos = {"value_loss": 0.0, "value_grad_norm": 0.0, "policy_loss": 0.0, "policy_grad_norm": 0.0}
             else:
                 train_infos = self.trainer.train(self.buffer)
+            train_infos = reduce_train_info(train_infos)
             self.buffer.after_update()
 
             update_end_time = time.time()
@@ -205,22 +231,16 @@ class BabyAITextRunner(VirtualHomeRunner):
         success_per_episode =  [1 if r > 0 else 0 for r in finished_rewards]
 
         log = {
-            "success_rate": sum(success_per_episode) / len(success_per_episode) if len(success_per_episode)>0 else 0,
             "num_frames": num_frames,
             "episodes_done": games_done,
-            "mean_waste_frames": np.mean(log_waste_frames) if len(log_waste_frames) > 0 else float('nan'),
-            "mean_frames_to_win": np.mean(log_frames_to_win) if len(log_frames_to_win) > 0 else float('nan'),
-            "mean_waste_frames_to_win": np.mean(log_waste_frames_to_win) if len(log_waste_frames_to_win) > 0 else float(
-                'nan'),
+            "success_count": sum(success_per_episode),
+            "total_episodes": len(success_per_episode),
+            "total_waste_frames": np.sum(log_waste_frames) if len(log_waste_frames) > 0 else 0,
+            "count_waste_frames": len(log_waste_frames),
+            "total_frames_to_win": np.sum(log_frames_to_win) if len(log_frames_to_win) > 0 else 0,
+            "count_frames_to_win": len(log_frames_to_win),
+            "total_waste_frames_to_win": np.sum(log_waste_frames_to_win) if len(log_waste_frames_to_win) > 0 else 0,
+            "count_waste_frames_to_win": len(log_waste_frames_to_win),
             "completed_frames": np.sum(completed_frames),
-            "waste_frames": np.sum(log_waste_frames) if len(log_waste_frames) > 0 else float('nan'),
-            "frames_to_win": np.sum(log_frames_to_win) if len(log_frames_to_win) > 0 else float('nan'),
-            "waste_frames_to_win": np.sum(log_waste_frames_to_win) if len(log_waste_frames_to_win) > 0 else float(
-                'nan'),
         }
-
-        sum_completed_frames = log["completed_frames"]
-        log["waste_frames_percentage"] = (log["waste_frames"] / sum_completed_frames) if sum_completed_frames > 0 else float('nan')
-        log["waste_frames_to_win_percentage"] = (log["waste_frames_to_win"] / log["frames_to_win"]) if log["frames_to_win"] > 0 else float('nan')
-
         return log

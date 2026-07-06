@@ -15,7 +15,7 @@ import pickle
 from mappo.envs.datascience.prompts.scikit_prompts import *
 import json
 
-from mappo.utils.distributed import is_main_process
+from mappo.utils.distributed import is_main_process, reduce_train_info
 
 
 def _t2n(x):
@@ -128,7 +128,8 @@ class CaseStudyRunner:
             if self.all_args.skip_updating_model:
                 train_infos = {"value_loss": 0.0, "value_grad_norm": 0.0, "policy_loss": 0.0, "policy_grad_norm": 0.0}
             else:
-                train_infos = self.trainer.train(self.buffer)      
+                train_infos = self.trainer.train(self.buffer)
+            train_infos = reduce_train_info(train_infos)
             self.buffer.after_update()
 
             # log information
