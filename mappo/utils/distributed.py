@@ -1,15 +1,13 @@
 import os
-from contextlib import contextmanager
 
 import torch
 import torch.distributed as dist
+from torch.distributed.checkpoint.state_dict import get_state_dict
 from torch.distributed.fsdp import (
     FullyShardedDataParallel as FSDP,
     MixedPrecision,
     BackwardPrefetch,
     ShardingStrategy,
-    FullStateDictConfig,
-    StateDictType,
 )
 
 
@@ -72,20 +70,9 @@ def fsdp_wrap(model, device_id, sharding_strategy=ShardingStrategy.NO_SHARD, **k
     )
 
 
-@contextmanager
-def full_state_dict(model):
-    if is_distributed():
-        config = FullStateDictConfig(rank0_only=True, offload_to_cpu=True)
-        with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, config):
-            yield
-    else:
-        yield
-
-
 def save_fsdp_model(model, path):
-    with full_state_dict(model):
-        state_dict = model.state_dict()
-        if get_local_rank() == 0:
-            torch.save(state_dict, path)
+    state_dict = get_state_dict(model, optimizers=[])
+    if get_local_rank() == 0:
+        torch.save(state_dict, path)
     if is_distributed():
         dist.barrier()

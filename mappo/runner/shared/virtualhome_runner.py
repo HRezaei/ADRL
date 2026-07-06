@@ -18,7 +18,8 @@ from mappo.agents.seq2seq_lora_agent import Seq2SeqLoRAgent
 from mappo.utils.language_buffer import LanguageBuffer
 from mappo.trainers.llm_trainer_appo import APPOTrainer
 from mappo.trainers.llm_trainer_tppo import TPPOTrainer
-from mappo.utils.distributed import is_distributed, get_local_rank, fsdp_wrap, full_state_dict, is_main_process
+from mappo.utils.distributed import is_distributed, get_local_rank, fsdp_wrap, is_main_process
+from torch.distributed.checkpoint.state_dict import get_state_dict as fsdp_get_state_dict
 import torch.distributed as dist
 from torch.distributed.fsdp import ShardingStrategy
 import pickle
@@ -257,14 +258,13 @@ class VirtualHomeRunner:
         """Save policy's actor and critic networks."""
         if is_distributed() and self.use_full_scale:
             exp_path = os.path.join(self.save_dir, "episode_{:04d}".format(episode))
-            with full_state_dict(self.agent.actor):
-                state_dict = self.agent.actor.state_dict()
-                if self.rank == 0:
-                    os.makedirs(exp_path, exist_ok=True)
-                    base_model = getattr(self.agent, 'base_model', None)
-                    if base_model is not None and hasattr(base_model, 'config'):
-                        base_model.config.save_pretrained(exp_path)
-                    torch.save(state_dict, os.path.join(exp_path, "pytorch_model.bin"))
+            state_dict = fsdp_get_state_dict(self.agent.actor, optimizers=[])
+            if self.rank == 0:
+                os.makedirs(exp_path, exist_ok=True)
+                base_model = getattr(self.agent, 'base_model', None)
+                if base_model is not None and hasattr(base_model, 'config'):
+                    base_model.config.save_pretrained(exp_path)
+                torch.save(state_dict, os.path.join(exp_path, "pytorch_model.bin"))
             dist.barrier()
         else:
             self.agent.save(self.save_dir, episode)

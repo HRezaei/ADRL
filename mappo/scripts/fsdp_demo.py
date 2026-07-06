@@ -24,13 +24,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 import torch
 import torch.nn as nn
 import torch.distributed as dist
+from torch.distributed.checkpoint.state_dict import get_state_dict
 from torch.distributed.fsdp import (
     FullyShardedDataParallel as FSDP,
     MixedPrecision,
     BackwardPrefetch,
     ShardingStrategy,
-    FullStateDictConfig,
-    StateDictType,
 )
 from transformers import (
     AutoModelForCausalLM,
@@ -275,9 +274,7 @@ def main():
     # ===========================================================
     print(f"\n--- Test 10: State dict gather ---")
     try:
-        cfg = FullStateDictConfig(rank0_only=True, offload_to_cpu=True)
-        with FSDP.state_dict_type(actor2, StateDictType.FULL_STATE_DICT, cfg):
-            sd = actor2.state_dict()
+        sd = get_state_dict(actor2, optimizers=[])
         print(f"  gathered {len(sd)} param groups")
         ok("state dict gather")
 
