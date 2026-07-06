@@ -212,7 +212,7 @@ def main():
         attn_mask = enc["attention_mask"].to(device)
 
         with torch.no_grad():
-            out = actor(input_ids=input_ids, attention_mask=attn_mask)
+            out = actor(input_ids=input_ids, attention_mask=attn_mask, decoder_input_ids=input_ids)
         print(f"  logits shape: {out.logits.shape}")
         ok("forward pass (no MP)")
     except Exception as e:
@@ -231,7 +231,7 @@ def main():
     try:
         actor2 = make_fsdp(base_model2, local_rank, use_mixed_precision=True)
         with torch.no_grad():
-            out2 = actor2(input_ids=input_ids, attention_mask=attn_mask)
+            out2 = actor2(input_ids=input_ids, attention_mask=attn_mask, decoder_input_ids=input_ids)
         print(f"  logits shape: {out2.logits.shape}")
         ok("forward pass (with MP)")
     except Exception as e:
@@ -243,7 +243,7 @@ def main():
     print(f"\n--- Test 8: Backward pass ---")
     try:
         actor2.train()
-        logits = actor2(input_ids=input_ids, attention_mask=attn_mask)
+        logits = actor2(input_ids=input_ids, attention_mask=attn_mask, decoder_input_ids=input_ids)
         loss = logits.sum()
         loss.backward()
 
