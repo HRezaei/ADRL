@@ -9,6 +9,7 @@ import wandb
 from tensorboardX import SummaryWriter
 from mappo.models.codellama import Llama
 from mappo.agents.llama_lora_agent import LlamaLoRAgent
+from mappo.utils.distributed import is_main_process
 from mappo.utils.language_buffer import LanguageBuffer
 from mappo.trainers.llm_trainer_appo import APPOTrainer
 from mappo.trainers.llm_trainer_tppo import TPPOTrainer
@@ -73,11 +74,16 @@ class OvercookedRunner:
         model = getattr(self.agent, 'actor', self.agent.base_model)
         total_params = sum(p.numel() for p in model.parameters())
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        wandb.config.update({
-            "model/total_params": total_params,
-            "model/trainable_params": trainable_params,
-            "model/trainable_pct": 100.0 * trainable_params / total_params if total_params > 0 else 0,
-        })
+        if is_main_process():
+            wandb.config.update({
+                "model/total_params": total_params,
+                "model/trainable_params": trainable_params,
+                "model/trainable_pct": 100.0 * trainable_params / total_params if total_params > 0 else 0,
+            })
+            for env_var in ["SLURM_JOB_ID", "SLRUM_JOB_FILE_CONTENT", "SLURM_JOB_FILE_NAME"]:
+                value = os.environ.get(env_var)
+                if value is not None:
+                    wandb.config.update({env_var: value})
         self.buffer = LanguageBuffer(self.all_args, self.num_agents, self.agent.tokenizer.pad_token_id)
         
         if self.algo == "TWOSOME":
