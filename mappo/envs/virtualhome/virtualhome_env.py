@@ -11,8 +11,8 @@ from mappo.envs.virtualhome.virtualhome_planner import VirtualHomePlanner
 
 def make_env(env_id, seed, idx, env_params):
     def thunk():
-
-        env = gym.make(env_id, **env_params)
+        params = dict(env_params, seed=seed)
+        env = gym.make(env_id, **params)
         return env
 
     return thunk
