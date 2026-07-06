@@ -55,6 +55,7 @@ def main(args):
     all_args = parse_args(args, parser)
 
     if is_distributed():
+        all_args.n_rollout_threads_original = all_args.n_rollout_threads
         all_args.n_rollout_threads = max(1, all_args.n_rollout_threads // world_size)
     all_args.episode_length = 32
     all_args.log_interval = 1

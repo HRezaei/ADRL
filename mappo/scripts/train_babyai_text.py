@@ -61,6 +61,7 @@ def main(args):
     validate_tppo_config(all_args)
 
     if is_distributed():
+        all_args.n_rollout_threads_original = all_args.n_rollout_threads
         all_args.n_rollout_threads = max(1, all_args.n_rollout_threads // world_size)
     if rank == 0:
         print(all_args)
