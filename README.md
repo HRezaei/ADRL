@@ -1,6 +1,8 @@
-# ADRL — Adversarial Decision Representation Learning with LLMs
+# ADRL — Action Decomposition Reinforcement Learning
 
 Reinforcement learning with large language models (LLMs) in interactive environments.
+
+[[POAD paper @ NeurIPS 2024](https://neurips.cc/virtual/2024/poster/95795)]
 
 ## Setup
 
