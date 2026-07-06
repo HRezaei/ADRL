@@ -47,7 +47,7 @@ def is_main_process():
     return get_rank() == 0
 
 
-def fsdp_wrap(model, device_id, sharding_strategy=ShardingStrategy.FULL_SHARD, **kwargs):
+def fsdp_wrap(model, device_id, sharding_strategy=ShardingStrategy.NO_SHARD, **kwargs):
     if not is_distributed():
         return model
     mixed_precision = MixedPrecision(

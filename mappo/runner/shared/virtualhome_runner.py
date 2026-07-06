@@ -20,6 +20,7 @@ from mappo.trainers.llm_trainer_appo import APPOTrainer
 from mappo.trainers.llm_trainer_tppo import TPPOTrainer
 from mappo.utils.distributed import is_distributed, get_local_rank, fsdp_wrap, full_state_dict, is_main_process
 import torch.distributed as dist
+from torch.distributed.fsdp import ShardingStrategy
 import pickle
 from mappo.envs.datascience.prompts.scikit_prompts import *
 import json
@@ -108,7 +109,8 @@ class VirtualHomeRunner:
                         self.agent.actor.decoder.embed_tokens.weight = torch.nn.Parameter(
                             self.agent.actor.decoder.embed_tokens.weight.clone()
                         )
-            self.agent.actor = fsdp_wrap(self.agent.actor, device_id=self.local_rank)
+            sharding_strategy = ShardingStrategy.FULL_SHARD if self.all_args.sharding_strategy == "full_shard" else ShardingStrategy.NO_SHARD
+            self.agent.actor = fsdp_wrap(self.agent.actor, device_id=self.local_rank, sharding_strategy=sharding_strategy)
             self.agent.critic = self.agent.critic.to(self.agent.device)
         else:
             self.agent.actor = self.agent.actor.to(self.agent.device)

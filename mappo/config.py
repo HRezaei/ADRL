@@ -291,6 +291,7 @@ def get_config():
     parser.add_argument("--llm_class_full", type=str, default="LlamaFullAgent", help="the class name for full-scale LLM agent")
     parser.add_argument("--llm_class_lora", type=str, default="LlamaLoRAgent", help="the class name for LoRA LLM agent")
     parser.add_argument("--skip_updating_model", type=int, nargs="?", const=1, default=0, help="skip model update and log zero train_infos")
+    parser.add_argument("--sharding_strategy", type=str, default="no_shard", choices=["no_shard", "full_shard"], help="FSDP sharding strategy: no_shard (like DDP) or full_shard (shard params/grads/opt states)")
     return parser
 
 
