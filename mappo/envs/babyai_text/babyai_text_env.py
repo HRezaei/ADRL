@@ -24,7 +24,6 @@ class LoggingWrapper(gym.Wrapper):
             'gold_steps': gold_steps,
         }
         reset_output = super().reset(**kwargs)
-        self.env.env.env.max_steps = 30
         run_index = self.metadata.get('index_in_run', 0)
         self.metadata['index_in_run'] = run_index + 1
 

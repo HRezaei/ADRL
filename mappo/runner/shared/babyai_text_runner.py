@@ -197,7 +197,7 @@ class BabyAITextRunner(VirtualHomeRunner):
                         self.plan_step[i] += 1
 
             for i in range(self.n_rollout_threads):
-                if dones[i] or self.envs.envs.envs[i].steps_remaining == 0:
+                if dones[i]:
                     games_done += 1
                     self._finish_game(i, bool(rewards[i].item() > 0))
                     self._start_new_game(i)
@@ -214,7 +214,6 @@ class BabyAITextRunner(VirtualHomeRunner):
                         log_frames_to_win.append(actual_steps)
                         log_waste_frames_to_win.append(waste_frames)
                     log_waste_frames.append(waste_frames)
-                    #self.envs.envs.envs[i].max_steps = 40
                     global_step = total_num_steps + step * self.n_rollout_threads + i
                     print(
                         f"global_step={global_step}, episodic_return={rewards[i]}, episodic_length={0}, waste_frames={actual_steps - gold_steps}")
