@@ -10,9 +10,9 @@ from mappo.agents.llama_lora_agent import LlamaLoRAgent
 
 
 class Seq2SeqLoRAgent(LlamaLoRAgent):
-    def __init__(self, model_name, max_new_tokens, algo, load_path=None):
+    def __init__(self, model_name, max_new_tokens, algo, load_path=None, local_rank=0):
         if torch.cuda.is_available():
-            self.device = "cuda"
+            self.device = f"cuda:{local_rank}"
         elif torch.backends.mps.is_available():
             self.device = "mps"
         else:
