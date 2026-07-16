@@ -368,6 +368,9 @@ class LlamaLoRAgent:
         print("active adapter: ", self.actor.active_adapter)
         model = self.actor.merge_and_unload()
         model.save_pretrained(exp_path)
+        # save critic value head MLP
+        v_head_state = {k: v for k, v in self.critic.state_dict().items() if 'v_head' in k}
+        torch.save(v_head_state, os.path.join(exp_path, "critic_v_head.pth"))
 
     def load(self, save_dir):
         print("load model on path: ", save_dir)

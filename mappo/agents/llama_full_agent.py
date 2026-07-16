@@ -285,3 +285,6 @@ class LlamaFullAgent:
         os.makedirs(exp_path, exist_ok=True)
         # save full scale model
         self.actor.save_pretrained(exp_path)
+        # save critic value head MLP
+        v_head_state = {k: v for k, v in self.critic.state_dict().items() if 'v_head' in k}
+        torch.save(v_head_state, os.path.join(exp_path, "critic_v_head.pth"))
