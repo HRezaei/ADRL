@@ -1,5 +1,6 @@
 import json
 import time
+from datetime import datetime
 
 import numpy as np
 import torch
@@ -17,7 +18,11 @@ class BabyAITextRunner(VirtualHomeRunner):
         super().__init__(config)
         self.use_planner = getattr(self.all_args, "use_planner", 0)
         self.save_json_interval = getattr(self.all_args, "save_json_interval", 1)
-        self.games_json_path = str(self.run_dir / "games.json")
+        if self.start_episode > 0:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.games_json_path = str(self.run_dir / f"games_{ts}.json")
+        else:
+            self.games_json_path = str(self.run_dir / "games.json")
         self.games_record = {i: [] for i in range(self.n_rollout_threads)}
         self._current_game = [None] * self.n_rollout_threads
         self._env_seeds = [self.all_args.seed + i for i in range(self.n_rollout_threads)]
