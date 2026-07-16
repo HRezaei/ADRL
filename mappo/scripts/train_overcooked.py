@@ -54,10 +54,8 @@ def main(args):
     all_args.critic_lr = 1e-5
     validate_tppo_config(all_args)
         
-    run_dir = build_run_dir(all_args)
-
-    resume_checkpoint = None
     resume_run_dir = getattr(all_args, 'resume_run', None)
+    resume_checkpoint = None
     if resume_run_dir:
         import json as _json
         from mappo.utils.util import find_latest_checkpoint
@@ -69,8 +67,12 @@ def main(args):
             meta = _json.load(_f)
         episodes_completed = meta['episode'] + 1
         all_args.seed += episodes_completed
-        run_dir = Path(resume_run_dir)
         print(f"[resume] checkpoint: {resume_checkpoint}, episodes done: {episodes_completed}, new seed: {all_args.seed}")
+
+    if resume_run_dir:
+        run_dir = Path(resume_run_dir)
+    else:
+        run_dir = build_run_dir(all_args)
 
     # seed
     random.seed(all_args.seed)

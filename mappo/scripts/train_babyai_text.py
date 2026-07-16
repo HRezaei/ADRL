@@ -66,22 +66,11 @@ def main(args):
     if rank == 0:
         print(all_args)
 
-    if is_distributed():
-        if rank == 0:
-            run_dir = build_run_dir(all_args)
-        else:
-            run_dir = None
-        run_dir_list = [run_dir]
-        dist.broadcast_object_list(run_dir_list, src=0)
-        run_dir = run_dir_list[0]
-    else:
-        run_dir = build_run_dir(all_args)
-
-    resume_checkpoint = None
     resume_run_dir = getattr(all_args, 'resume_run', None)
+    resume_checkpoint = None
     if resume_run_dir:
-        from mappo.utils.util import find_latest_checkpoint
         import json as _json
+        from mappo.utils.util import find_latest_checkpoint
         resume_checkpoint = find_latest_checkpoint(resume_run_dir)
         if resume_checkpoint is None:
             raise RuntimeError(f"No checkpoint found in {resume_run_dir}")
@@ -90,8 +79,25 @@ def main(args):
             meta = _json.load(_f)
         episodes_completed = meta['episode'] + 1
         all_args.seed += episodes_completed
-        run_dir = Path(resume_run_dir)
         print(f"[resume] checkpoint: {resume_checkpoint}, episodes done: {episodes_completed}, new seed: {all_args.seed}")
+
+    if resume_run_dir:
+        run_dir = Path(resume_run_dir)
+        if is_distributed():
+            run_dir_list = [run_dir]
+            dist.broadcast_object_list(run_dir_list, src=0)
+            run_dir = run_dir_list[0]
+    else:
+        if is_distributed():
+            if rank == 0:
+                run_dir = build_run_dir(all_args)
+            else:
+                run_dir = None
+            run_dir_list = [run_dir]
+            dist.broadcast_object_list(run_dir_list, src=0)
+            run_dir = run_dir_list[0]
+        else:
+            run_dir = build_run_dir(all_args)
 
     random.seed(all_args.seed)
     np.random.seed(all_args.seed)
