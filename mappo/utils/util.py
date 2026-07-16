@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import math
 import torch
@@ -70,3 +71,33 @@ def tile_images(img_nhwc):
     img_HhWwc = img_HWhwc.transpose(0, 2, 1, 3, 4)
     img_Hh_Ww_c = img_HhWwc.reshape(H*h, W*w, c)
     return img_Hh_Ww_c
+
+
+def push_to_hub(folder_path, hub_id, episode=None):
+    """Upload a local model folder to HuggingFace Hub.
+
+    Requires the HF_TOKEN environment variable to be set.
+    Each episode is pushed as a separate revision (commit) so that
+    different checkpoints are preserved.
+    """
+    from huggingface_hub import HfApi
+
+    token = os.environ.get("HF_TOKEN")
+    if not token:
+        raise RuntimeError(
+            "HF_TOKEN environment variable is not set. "
+            "Generate a token at https://huggingface.co/settings/tokens "
+            "and export it: export HF_TOKEN=hf_..."
+        )
+
+    api = HfApi(token=token)
+    repo_url = api.create_repo(repo_id=hub_id, repo_type="model", exist_ok=True)
+    print(f"{repo_url=}")
+    commit_message = f"checkpoint episode {episode}" if episode is not None else "update"
+    print(f"[push_to_hub] uploading {folder_path} -> {hub_id} ({commit_message})")
+    api.upload_folder(
+        folder_path=folder_path,
+        repo_id=hub_id,
+        commit_message=commit_message,
+    )
+    print(f"[push_to_hub] done")

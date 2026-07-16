@@ -257,6 +257,7 @@ class VirtualHomeRunner:
                 
     def save(self, episode):
         """Save policy's actor and critic networks."""
+        hub_id = getattr(self.all_args, 'push_to_hub_id', None)
         if is_distributed() and self.use_full_scale:
             exp_path = os.path.join(self.save_dir, "episode_{:04d}".format(episode))
             state_dict = fsdp_get_state_dict(self.agent.actor, optimizers=[])
@@ -266,6 +267,13 @@ class VirtualHomeRunner:
                 if base_model is not None and hasattr(base_model, 'config'):
                     base_model.config.save_pretrained(exp_path)
                 torch.save(state_dict, os.path.join(exp_path, "pytorch_model.bin"))
+                if hub_id:
+                    from mappo.utils.util import push_to_hub
+                    push_to_hub(exp_path, hub_id, episode)
             dist.barrier()
         else:
             self.agent.save(self.save_dir, episode)
+            if hub_id and (not is_distributed() or self.rank == 0):
+                from mappo.utils.util import push_to_hub
+                exp_path = os.path.join(self.save_dir, "episode_{:04d}".format(episode))
+                push_to_hub(exp_path, hub_id, episode)

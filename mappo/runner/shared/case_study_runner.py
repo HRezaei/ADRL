@@ -190,5 +190,10 @@ class CaseStudyRunner:
     def save(self, episode):
         """Save policy's actor and critic networks."""
         self.agent.save(self.save_dir, episode)
+        hub_id = getattr(self.all_args, 'push_to_hub_id', None)
+        if hub_id and is_main_process():
+            from mappo.utils.util import push_to_hub
+            exp_path = os.path.join(self.save_dir, "episode_{:04d}".format(episode))
+            push_to_hub(exp_path, hub_id, episode)
 
 

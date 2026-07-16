@@ -274,6 +274,21 @@ torchrun --nproc_per_node=4 train_babyai_text.py \
 | `--llm_class_lora` | str | `LlamaLoRAgent` | Agent class for LoRA LLM |
 | `--skip_updating_model` | int | `0` | Skip model update (log zero train infos) |
 | `--sharding_strategy` | str | `no_shard` | FSDP strategy: `no_shard` or `full_shard` |
+| `--push_to_hub_id` | str | `None` | HuggingFace Hub repo id (e.g. `user/repo`). If set, models are pushed to Hub after every local save |
+
+### HuggingFace Hub Integration
+
+Models can be pushed to HuggingFace Hub alongside local saves. Set `--push_to_hub_id` and provide a `HF_TOKEN`:
+
+```bash
+export HF_TOKEN=hf_...  # generate at https://huggingface.co/settings/tokens
+
+python train_virtualhome.py \
+    --push_to_hub_id "my-user/my-model" \
+    ...
+```
+
+Each checkpoint is uploaded as a separate commit named `checkpoint episode <N>`.
 
 ### Script-Specific Arguments
 
