@@ -90,7 +90,8 @@ class CodeLlamaLoRAgent:
         critic = TPPOCritic(self.actor, self.tokenizer)
 
         if critic_weights is not None:
-            critic.v_head.load_state_dict(torch.load(critic_weights, map_location= "cpu"))
+            state_dict = torch.load(critic_weights, map_location="cpu")
+            critic.load_state_dict(state_dict, strict=False)
         return critic
     
     def get_actions(self, obs, actions=None, greedy=False):
@@ -261,8 +262,15 @@ class CodeLlamaLoRAgent:
     def load(self, save_dir):
         print("load model")
         self.actor = self._init_actor(save_dir).to(self.device)
-        critic_weights = os.path.join(save_dir, "critic.pth")
-        self.critic = self._init_critic(critic_weights).to(self.device)
+        self.critic = self._init_critic().to(self.device)
+        # try new naming first, fall back to legacy critic.pth
+        v_head_path = os.path.join(save_dir, "critic_v_head.pth")
+        legacy_path = os.path.join(save_dir, "critic.pth")
+        weights_path = v_head_path if os.path.exists(v_head_path) else legacy_path
+        if os.path.exists(weights_path):
+            state_dict = torch.load(weights_path, map_location=self.device)
+            self.critic.load_state_dict(state_dict, strict=False)
+            print(f"loaded critic value head from {weights_path}")
 
     def train(self):
         self.generator.train()

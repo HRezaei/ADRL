@@ -53,7 +53,8 @@ class LlamaCritic:
         else:
             raise NotImplementedError
         if critic_weights is not None:
-            critic.v_head.load_state_dict(torch.load(critic_weights, map_location= "cpu"))
+            state_dict = torch.load(critic_weights, map_location="cpu")
+            critic.load_state_dict(state_dict, strict=False)
         return critic
     
     def sample_actions(self, input_ids, seq_token_lengths, act_token_lengths, 
@@ -210,5 +211,11 @@ class LlamaCritic:
 
     def load(self, save_dir):
         print("load model on path: ", save_dir)
+        self.critic = self._init_critic().to(self.device)
+        v_head_path = os.path.join(save_dir, "critic_v_head.pth")
+        if os.path.exists(v_head_path):
+            state_dict = torch.load(v_head_path, map_location=self.device)
+            self.critic.load_state_dict(state_dict, strict=False)
+            print(f"loaded critic value head from {v_head_path}")
 
 

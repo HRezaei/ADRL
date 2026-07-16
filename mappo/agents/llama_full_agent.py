@@ -50,6 +50,13 @@ class LlamaFullAgent:
         
         self.actor = self.base_model
         self.critic = self._init_critic()
+        # load value head if saved alongside the model
+        model_dir = load_path if load_path is not None else model_name
+        v_head_path = os.path.join(model_dir, "critic_v_head.pth")
+        if os.path.exists(v_head_path):
+            state_dict = torch.load(v_head_path, map_location="cpu")
+            self.critic.load_state_dict(state_dict, strict=False)
+            print(f"loaded critic value head from {v_head_path}")
     
     def _init_critic(self, critic_weights = None):
         if self.algo == "TWOSOME":
@@ -61,7 +68,8 @@ class LlamaFullAgent:
         for param in critic.rwtranrsformer.parameters():
             param.requires_grad = False
         if critic_weights is not None:
-            critic.v_head.load_state_dict(torch.load(critic_weights, map_location= "cpu"))
+            state_dict = torch.load(critic_weights, map_location="cpu")
+            critic.load_state_dict(state_dict, strict=False)
         return critic
     
     def sample_actions(self, input_ids, token_logits, seq_token_lengths, act_token_lengths, 
@@ -288,3 +296,14 @@ class LlamaFullAgent:
         # save critic value head MLP
         v_head_state = {k: v for k, v in self.critic.state_dict().items() if 'v_head' in k}
         torch.save(v_head_state, os.path.join(exp_path, "critic_v_head.pth"))
+
+    def load(self, save_dir):
+        print("load model on path: ", save_dir)
+        self.actor = LlamaForCausalLM.from_pretrained(save_dir).to(self.device)
+        self.base_model = self.actor
+        self.critic = self._init_critic().to(self.device)
+        v_head_path = os.path.join(save_dir, "critic_v_head.pth")
+        if os.path.exists(v_head_path):
+            state_dict = torch.load(v_head_path, map_location=self.device)
+            self.critic.load_state_dict(state_dict, strict=False)
+            print(f"loaded critic value head from {v_head_path}")
