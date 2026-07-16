@@ -126,8 +126,6 @@ def get_config():
             by default, do not apply linear decay to learning rate. If set, use a linear schedule on the learning rate
     
     Save & Log parameters:
-        --save_interval <int>
-            time duration between contiunous twice models saving.
         --log_interval <int>
             time duration between contiunous twice log printing.
     
@@ -265,7 +263,6 @@ def get_config():
     parser.add_argument("--use_linear_lr_decay", action='store_true',
                         default=False, help='use a linear schedule on the learning rate')
     # save parameters
-    parser.add_argument("--save_interval", type=int, default=100, help="time duration between contiunous twice models saving.")
     parser.add_argument("--model_save_interval", type=int, default=5, help="save model every N episodes.")
 
     # log parameters
@@ -294,6 +291,10 @@ def get_config():
     parser.add_argument("--sharding_strategy", type=str, default="no_shard", choices=["no_shard", "full_shard"], help="FSDP sharding strategy: no_shard (like DDP) or full_shard (shard params/grads/opt states)")
     # hub push parameters
     parser.add_argument("--push_to_hub_id", type=str, default=None, help="HuggingFace Hub repo id (e.g. 'user/repo'). If set, models are pushed to Hub after every local save. Requires HF_TOKEN env var.")
+    # resume parameters
+    parser.add_argument("--resume_run", type=str, default=None, help="Path to a run directory to resume from. Loads the latest checkpoint (model, optimizer, RNG) and continues training from there.")
+    parser.add_argument("--wandb_run_id", type=str, default=None, help="wandb run id to resume. Required when --resume_run is set unless --force_resume_with_no_wandb is used.")
+    parser.add_argument("--force_resume_with_no_wandb", action='store_true', default=False, help="Allow resuming without --wandb_run_id. Disables wandb logging for the resumed run.")
     return parser
 
 

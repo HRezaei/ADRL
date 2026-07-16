@@ -77,6 +77,22 @@ def main(args):
     else:
         run_dir = build_run_dir(all_args)
 
+    resume_checkpoint = None
+    resume_run_dir = getattr(all_args, 'resume_run', None)
+    if resume_run_dir:
+        from mappo.utils.util import find_latest_checkpoint
+        import json as _json
+        resume_checkpoint = find_latest_checkpoint(resume_run_dir)
+        if resume_checkpoint is None:
+            raise RuntimeError(f"No checkpoint found in {resume_run_dir}")
+        meta_path = os.path.join(os.path.dirname(resume_checkpoint), "metadata.json")
+        with open(meta_path) as _f:
+            meta = _json.load(_f)
+        episodes_completed = meta['episode'] + 1
+        all_args.seed += episodes_completed
+        run_dir = Path(resume_run_dir)
+        print(f"[resume] checkpoint: {resume_checkpoint}, episodes done: {episodes_completed}, new seed: {all_args.seed}")
+
     random.seed(all_args.seed)
     np.random.seed(all_args.seed)
     torch.manual_seed(all_args.seed)
@@ -100,6 +116,7 @@ def main(args):
         "num_agents": envs.num_agents,
         "run_dir": run_dir,
         "local_rank": local_rank,
+        "resume_checkpoint": resume_checkpoint,
     }
 
     runner = Runner(config)

@@ -33,8 +33,8 @@ class BabyAITextRunner(VirtualHomeRunner):
 
         episodes = int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
 
-        total_num_steps = 0
-        for episode in tqdm(range(episodes), desc="episodes"):
+        total_num_steps = self.total_num_steps
+        for episode in tqdm(range(self.start_episode, episodes), desc="episodes"):
 
             update_start_time = time.time()
             collect_logs = self.collect_experiences(episode)

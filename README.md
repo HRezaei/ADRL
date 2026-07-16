@@ -275,6 +275,9 @@ torchrun --nproc_per_node=4 train_babyai_text.py \
 | `--skip_updating_model` | int | `0` | Skip model update (log zero train infos) |
 | `--sharding_strategy` | str | `no_shard` | FSDP strategy: `no_shard` or `full_shard` |
 | `--push_to_hub_id` | str | `None` | HuggingFace Hub repo id (e.g. `user/repo`). If set, models are pushed to Hub after every local save |
+| `--resume_run` | str | `None` | Path to a run directory to resume from (finds latest checkpoint automatically) |
+| `--wandb_run_id` | str | `None` | Wandb run id to resume (required with `--resume_run` unless `--force_resume_with_no_wandb` is set) |
+| `--force_resume_with_no_wandb` | bool | `False` | Allow resuming without wandb run id |
 
 ### HuggingFace Hub Integration
 
@@ -289,6 +292,19 @@ python train_virtualhome.py \
 ```
 
 Each checkpoint is uploaded as a separate commit named `checkpoint episode <N>`.
+
+### Resume Training
+
+Resume from a crashed or interrupted run by pointing `--resume_run` at the run directory. The latest checkpoint is loaded automatically; model, optimizer, scheduler, RNG, and wandb state are restored.
+
+```bash
+python train_virtualhome.py \
+    --resume_run "mappo/scripts/results/my_experiment/VirtualHome-v1/TPPO/run0" \
+    --wandb_run_id <wandb-run-id> \
+    ...
+```
+
+Use `--force_resume_with_no_wandb` to skip wandb resume (starts a fresh wandb run instead). The environment seed is advanced by the number of completed episodes so the agent does not replay the same game sequence.
 
 ### Script-Specific Arguments
 
@@ -319,7 +335,13 @@ mappo/scripts/results/
                 ├── logs/
                 │   └── summary.json
                 ├── models/
-                │   └── episode_<N>.pt
+                │   └── episode_<N>/
+                │       ├── actor_lora.pth / actor_full.pth
+                │       ├── critic_lora.pth / critic_v_head.pth
+                │       ├── actor_lora_full_state_dict/  (OPT only)
+                │       ├── checkpoint.pt
+                │       ├── config.json
+                │       └── pytorch_model.bin
                 ├── screenshots/
                 │   └── env<NN>_ep<NNNN>_run<NN>/
                 │       └── step<NNNN>.png

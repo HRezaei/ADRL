@@ -49,13 +49,18 @@ class CaseStudyRunner:
         config_for_wandb.pop("eval_envs", None)
         model_short = os.path.basename(self.all_args.model_name) if self.all_args.model_name else "unknown"
         scale_tag = "full" if getattr(self.all_args, "use_full_scale", 0) else "lora"
-        wandb.init(
+        wandb_kwargs = dict(
             project="adrl",
             sync_tensorboard=True,
             settings=wandb.Settings(_service_wait=300, code_dir="./mappo"),
             config=config_for_wandb,
             name=f"{self.all_args.experiment_name}_{self.game_name}_{model_short}_{scale_tag}_{uuid.uuid4().hex[:8]}",
         )
+        wandb_run_id = getattr(self.all_args, 'wandb_run_id', None)
+        if wandb_run_id:
+            wandb_kwargs["id"] = wandb_run_id
+            wandb_kwargs["resume"] = "allow"
+        wandb.init(**wandb_kwargs)
         self.writter = SummaryWriter(self.log_dir)
         self.save_dir = str(self.run_dir / 'models/')
         if not os.path.exists(self.save_dir):
@@ -85,7 +90,17 @@ class CaseStudyRunner:
             self.trainer = CriticTPPOTrainer(self.all_args, self.agent, self.num_agents)
         else:
             raise NotImplementedError
-        
+
+        self.start_episode = 0
+        self.total_num_steps = 0
+        resume_ckpt = config.get("resume_checkpoint", None)
+        if resume_ckpt is not None:
+            from mappo.utils.util import load_checkpoint, restore_rng_states
+            ckpt, meta = load_checkpoint(resume_ckpt, trainer=self.trainer, device=self.agent.device)
+            self.start_episode = meta['episode'] + 1
+            self.total_num_steps = meta['total_num_steps']
+            print(f"[resume] loaded checkpoint from {resume_ckpt}, resuming at episode {self.start_episode}")
+
         self.trajectories = None
         
 
@@ -98,8 +113,8 @@ class CaseStudyRunner:
 
         episodes = int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
         
-        total_num_steps = 0
-        for episode in range(episodes):
+        total_num_steps = self.total_num_steps
+        for episode in range(self.start_episode, episodes):
             for step in range(self.episode_length):
                 # Sample actions
                 values, actions, action_tokens = self.collect(step)
@@ -190,6 +205,11 @@ class CaseStudyRunner:
     def save(self, episode):
         """Save policy's actor and critic networks."""
         self.agent.save(self.save_dir, episode)
+        # save training checkpoint for resume
+        if is_main_process():
+            from mappo.utils.util import save_checkpoint
+            exp_path = os.path.join(self.save_dir, "episode_{:04d}".format(episode))
+            save_checkpoint(exp_path, episode, (episode + 1) * self.episode_length * self.n_rollout_threads, self.trainer)
         hub_id = getattr(self.all_args, 'push_to_hub_id', None)
         if hub_id and is_main_process():
             from mappo.utils.util import push_to_hub
